@@ -1,0 +1,160 @@
+{
+ "actions": [],
+ "creation": "2026-08-19 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "connection_section",
+  "traccar_url",
+  "enabled",
+  "column_break_conn",
+  "timeout",
+  "verify_ssl",
+  "auth_section",
+  "auth_type",
+  "basic_auth_column",
+  "username",
+  "password",
+  "api_key_column",
+  "api_key",
+  "session_section",
+  "connection_status",
+  "last_connection_test",
+  "column_break_session",
+  "last_error"
+ ],
+ "fields": [
+  {
+   "fieldname": "connection_section",
+   "fieldtype": "Section Break",
+   "label": "Connection"
+  },
+  {
+   "description": "Base URL of the Traccar server API, e.g. https://demo.traccar.org/api",
+   "fieldname": "traccar_url",
+   "fieldtype": "Data",
+   "label": "Traccar Server URL",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "column_break_conn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "15",
+   "description": "Request timeout in seconds",
+   "fieldname": "timeout",
+   "fieldtype": "Int",
+   "label": "Timeout (seconds)",
+   "non_negative": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "verify_ssl",
+   "fieldtype": "Check",
+   "label": "Verify SSL Certificate"
+  },
+  {
+   "fieldname": "auth_section",
+   "fieldtype": "Section Break",
+   "label": "Authentication"
+  },
+  {
+   "default": "Basic Auth",
+   "fieldname": "auth_type",
+   "fieldtype": "Select",
+   "label": "Authentication Type",
+   "options": "Basic Auth\nAPI Key",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.auth_type=='Basic Auth'",
+   "fieldname": "basic_auth_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.auth_type=='Basic Auth'",
+   "fieldname": "username",
+   "fieldtype": "Data",
+   "label": "Username",
+   "mandatory_depends_on": "eval:doc.auth_type=='Basic Auth'"
+  },
+  {
+   "depends_on": "eval:doc.auth_type=='Basic Auth'",
+   "fieldname": "password",
+   "fieldtype": "Password",
+   "label": "Password",
+   "mandatory_depends_on": "eval:doc.auth_type=='Basic Auth'"
+  },
+  {
+   "depends_on": "eval:doc.auth_type=='API Key'",
+   "fieldname": "api_key_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.auth_type=='API Key'",
+   "description": "Sent as an HTTP Bearer token, per the Traccar API's ApiKey security scheme.",
+   "fieldname": "api_key",
+   "fieldtype": "Password",
+   "label": "API Key",
+   "mandatory_depends_on": "eval:doc.auth_type=='API Key'"
+  },
+  {
+   "fieldname": "session_section",
+   "fieldtype": "Section Break",
+   "label": "Session / Status"
+  },
+  {
+   "fieldname": "connection_status",
+   "fieldtype": "Select",
+   "label": "Connection Status",
+   "options": "Not Tested\nConnected\nAuthentication Failed\nServer Unavailable\nTimeout\nInvalid Configuration",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_connection_test",
+   "fieldtype": "Datetime",
+   "label": "Last Connection Test",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_session",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "last_error",
+   "fieldtype": "Small Text",
+   "label": "Last Error",
+   "read_only": 1
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-08-19 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERP Tracking",
+ "name": "Traccar Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 0,
+   "export": 0,
+   "print": 0,
+   "read": 1,
+   "role": "System Manager",
+   "share": 0,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
