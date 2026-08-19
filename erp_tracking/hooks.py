@@ -37,9 +37,12 @@ fixtures = [
 after_install = "erp_tracking.install.after_install"
 
 # -----------------------------------------------------------------------------
-# Website / Desk assets (populated in later phases as pages are added)
+# Website / Desk assets
 # -----------------------------------------------------------------------------
-app_include_js = []
+# Loaded on every Desk page so any ERP Tracking page (or a future custom
+# report) can use erp_tracking.ListEngine / erp_tracking.status_badge
+# without each page re-declaring the dependency.
+app_include_js = ["/assets/erp_tracking/js/erp_tracking_list_engine.js"]
 app_include_css = []
 
 doctype_js = {

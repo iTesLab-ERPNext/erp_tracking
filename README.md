@@ -3,10 +3,9 @@
 Traccar GPS tracking integration for **ERPNext v15 / Frappe v15**, built as a
 native Desk app (no separate React frontend).
 
-## Status: Phase 1 of 8
+## Status: Phase 2 of 8 complete
 
-This package delivers **Phase 1** from the implementation plan:
-
+**Phase 1** (foundation) — done:
 - App skeleton (`hooks.py`, `modules.txt`, roles, install hooks)
 - `Traccar Settings` Single DocType (connection, auth, session/status fields)
 - Centralized `TraccarAuth` (Basic Auth + API Key, one place headers are built)
@@ -15,16 +14,38 @@ This package delivers **Phase 1** from the implementation plan:
   supplied OpenAPI spec (Traccar 6.14.5)
 - `Test Connection` button with 🟢/🔴/🟠 status states
 - Three roles: `ERP Tracking Manager`, `ERP Tracking User`, `ERP Tracking Viewer`
-- Automated tests for auth, connection scenarios, and secret safety
 
-**Not yet built** (Phases 2-8 per the brief's own implementation order):
-Dashboard, Devices, Groups, Users, Live Positions, Position History, Route,
-Trips/Stops/Summary/Events reports, Geofences, Notifications, Commands,
-Drivers, Maintenance, Calendars, Orders, Server/Health/Statistics/Audit
-pages, Live Video, export system, full permission matrix, and French
-translations. Ask to continue with the next phase and it will be built on
-top of this same client/auth/config foundation — nothing here needs to be
-rewritten for later phases to plug into it.
+**Phase 2** (this delivery) — done:
+- `integrations/traccar/devices.py`, `groups.py`, `users.py` — list/get
+  wrappers over `TraccarClient`, with short-lived caching and a `refresh`
+  bypass (Section 44)
+- `integrations/traccar/permissions.py` — centralized `require_read()` /
+  `require_write()` / `require_admin()` used by every whitelisted method
+  (Section 40)
+- `integrations/traccar/dashboard.py` — aggregates device/group/user/geofence
+  counts for the Dashboard cards
+- `api.py` whitelisted endpoints: `get_dashboard_summary`, `get_devices`,
+  `get_device`, `get_groups`, `get_group`, `get_devices_in_group`,
+  `get_users`, `get_user`
+- `public/js/erp_tracking_list_engine.js` — the reusable list engine
+  (Section 38): search, pagination, refresh, sortable columns, shared status
+  badges. Devices/Groups/Users pages all configure this one engine instead
+  of each re-implementing list UI.
+- Desk Pages: **ERP Tracking Dashboard** (summary cards, connection banner,
+  quick actions), **Devices** (list + details dialog with an Overview tab;
+  Positions/Trips/Stops/Events/Maintenance/Commands/Geofences tabs are
+  visibly present but disabled until their phases land — no fake data,
+  Section 49), **Groups** (list + devices-in-group drill-in), **Users**
+  (list, `password` field stripped defensively before it ever leaves the
+  server, per Section 41)
+- Tests: device/group/user modules, dashboard aggregation, password
+  redaction, and a Guest-cannot-call-whitelisted-method permission check
+
+**Not yet built** (Phases 3-8):
+Live Positions, Position History, Route, Trips/Stops/Summary/Events reports,
+Geofences, Notifications, Commands, Drivers, Maintenance, Calendars, Orders,
+Server/Health/Statistics/Audit pages, Live Video, export system, full
+permission matrix on writes, and French translations.
 
 One correction versus a literal reading of the brief: the OpenAPI spec has
 **no `GET /events` list endpoint** — only `GET /events/{id}` (single event)
@@ -48,19 +69,32 @@ erp_tracking/
     │   └── desktop.py
     ├── integrations/
     │   └── traccar/
-    │       ├── config.py        # endpoint map + settings loader
-    │       ├── auth.py          # TraccarAuth (Basic + API Key)
-    │       ├── client.py        # TraccarClient (all HTTP)
-    │       ├── exceptions.py    # error hierarchy
-    │       └── utils.py         # date/pagination helpers
+    │       ├── config.py          # endpoint map + settings loader
+    │       ├── auth.py            # TraccarAuth (Basic + API Key)
+    │       ├── client.py          # TraccarClient (all HTTP)
+    │       ├── exceptions.py      # error hierarchy
+    │       ├── permissions.py     # require_read/write/admin role checks
+    │       ├── devices.py         # Phase 2
+    │       ├── groups.py          # Phase 2
+    │       ├── users.py           # Phase 2 (redacts password)
+    │       ├── dashboard.py       # Phase 2
+    │       └── utils.py           # date/pagination helpers
     ├── erp_tracking/
     │   └── doctype/
     │       └── traccar_settings/
     │           ├── traccar_settings.json
     │           ├── traccar_settings.py   # validate() + test_connection()
     │           └── traccar_settings.js   # Test Connection button + status
+    ├── page/
+    │   ├── erp_tracking_dashboard/
+    │   ├── tracking_devices/
+    │   ├── tracking_groups/
+    │   └── tracking_users/
+    ├── public/js/
+    │   └── erp_tracking_list_engine.js   # shared list UI (Section 38)
     └── tests/
-        └── test_traccar_settings.py
+        ├── test_traccar_settings.py
+        └── test_devices_groups_users.py
 ```
 
 ## Installation
@@ -106,13 +140,22 @@ encrypted at rest and excluded from API responses by Frappe core).
 ```bash
 bench --site <site> run-tests --app erp_tracking \
   --module erp_tracking.tests.test_traccar_settings
+
+bench --site <site> run-tests --app erp_tracking \
+  --module erp_tracking.tests.test_devices_groups_users
 ```
 
-Covers: Basic Auth success/failure, API Key success/failure, missing
-credentials, connection success/timeout/connection-refused/invalid-config,
-a generic `/devices` smoke test through the shared client, and secret-safety
-checks (API key never appears in any returned payload; unauthorized roles
-cannot call `test_connection`).
+Phase 1 suite covers: Basic Auth success/failure, API Key success/failure,
+missing credentials, connection success/timeout/connection-refused/invalid-
+config, a generic `/devices` smoke test through the shared client, and
+secret-safety checks (API key never appears in any returned payload;
+unauthorized roles cannot call `test_connection`).
+
+Phase 2 suite covers: device list/get/count (online vs offline), group
+list/get and devices-in-group filtering, user list/get with `password`
+stripped from every record before it's cached or returned, dashboard
+aggregation (including the honest "not configured" failure path), and a
+Guest-user permission check against `get_devices`.
 
 ## Verifying inside ERPNext
 
@@ -128,12 +171,21 @@ cannot call `test_connection`).
    Authorization header (only the whitelisted method name and result JSON).
 5. Log in as a user with only the `ERP Tracking User` role and confirm they
    cannot open Traccar Settings (list/form should 403).
+6. Navigate to `/app/erp-tracking-dashboard` — confirm the connection banner
+   and summary cards render, with Events/Trips/Stops Today showing "—" and
+   a "Available after Reports (Phase 4)" note rather than a fake number.
+7. Navigate to `/app/erp-tracking-devices` — confirm search, Refresh,
+   Previous/Next pagination all work, and clicking a row opens the details
+   dialog with the disabled Positions/Trips/Stops/etc. tabs visible (not
+   hidden — so it's clear they're coming, not missing).
+8. Navigate to `/app/erp-tracking-groups` and click a group to confirm the
+   devices-in-group dialog filters correctly.
+9. Navigate to `/app/erp-tracking-users` and confirm no `password` field
+   ever appears in the table or in the Network tab response body.
 
 ## Next phase
 
-Phase 2 (Dashboard, Devices, Groups, Users) builds directly on
-`TraccarClient` — e.g. `TraccarClient().get("devices")` — so none of the
-Phase 1 code changes, only new `integrations/traccar/devices.py`,
-`groups.py`, `users.py` modules and their Desk pages get added.
-# erp_tracking
-# erp_tracking
+Phase 3 (Live Positions, Position History, Route) builds a `positions.py`
+feature module on top of `TraccarClient`, plus the `/positions/csv`,
+`/positions/kml`, `/positions/gpx` native export endpoints from the spec.
+None of the Phase 1/2 code changes for this to plug in.
