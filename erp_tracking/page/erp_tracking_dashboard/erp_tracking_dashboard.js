@@ -49,11 +49,14 @@ class ERPTrackingDashboard {
 			{ label: __("Groups"), route: "erp-tracking-groups" },
 			{ label: __("Users"), route: "erp-tracking-users" },
 			{ label: __("Live Positions"), route: "erp-tracking-positions" },
+			{ label: __("Position History"), route: "erp-tracking-position-history" },
+			{ label: __("Route"), route: "erp-tracking-route" },
 			{ label: __("Trips"), route: "erp-tracking-reports" },
 			{ label: __("Stops"), route: "erp-tracking-reports" },
 			{ label: __("Events"), route: "erp-tracking-events" },
 			{ label: __("Reports"), route: "erp-tracking-reports" },
 			{ label: __("Geofences"), route: "erp-tracking-geofences" },
+			{ label: __("Notifications"), route: "erp-tracking-notifications" },
 			{ label: __("Commands"), route: "erp-tracking-commands" },
 		];
 

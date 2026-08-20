@@ -187,12 +187,25 @@ class TraccarClient:
 	@staticmethod
 	def _parse_body(response: "requests.Response"):
 		content_type = response.headers.get("Content-Type", "")
+
 		if "application/json" in content_type:
 			if not response.content:
 				return None
 			return response.json()
-		# /health and a few others return text/plain by design (see spec).
-		return response.text
+
+		if not response.content:
+			# e.g. 204 No Content (mail-delivery report requests, DELETE endpoints)
+			return None
+
+		if content_type.startswith("text/") or "xml" in content_type:
+			# /health (text/plain), /positions/gpx, /positions/kml (+xml) etc.
+			return response.text
+
+		# Binary payloads - native XLSX report/route downloads, device images,
+		# HLS video segments. Returning raw bytes here (not response.text)
+		# matters: decoding a binary spreadsheet or video segment as UTF-8
+		# text would corrupt it before it ever reaches the browser.
+		return response.content
 
 	@staticmethod
 	def _log(event: str, endpoint_key: str, method: str, status_code, started: float):

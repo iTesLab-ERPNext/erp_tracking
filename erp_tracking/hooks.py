@@ -39,10 +39,13 @@ after_install = "erp_tracking.install.after_install"
 # -----------------------------------------------------------------------------
 # Website / Desk assets
 # -----------------------------------------------------------------------------
-# Loaded on every Desk page so any ERP Tracking page (or a future custom
-# report) can use erp_tracking.ListEngine / erp_tracking.status_badge
-# without each page re-declaring the dependency.
-app_include_js = ["/assets/erp_tracking/js/erp_tracking_list_engine.js"]
+# erp_tracking.bundle.js lives at public/js/erp_tracking.bundle.js and is
+# built by `bench build` into /assets/erp_tracking/dist/js/erp_tracking.bundle.js
+# automatically, because it follows the required *.bundle.js naming
+# convention. Reference it here by its bare filename only - NOT by an
+# "/assets/..." path, which is not a valid hooks value and breaks the
+# esbuild asset-discovery step (get_all_files_to_build) during `bench build`.
+app_include_js = "erp_tracking.bundle.js"
 app_include_css = []
 
 doctype_js = {

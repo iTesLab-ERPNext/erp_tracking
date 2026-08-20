@@ -1,0 +1,15 @@
+{
+ "doctype": "Page",
+ "module": "ERP Tracking",
+ "name": "erp-tracking-positions",
+ "page_name": "erp-tracking-positions",
+ "title": "Live Positions",
+ "standard": "Yes",
+ "system_page": 0,
+ "roles": [
+  {"role": "System Manager"},
+  {"role": "ERP Tracking Manager"},
+  {"role": "ERP Tracking User"},
+  {"role": "ERP Tracking Viewer"}
+ ]
+}

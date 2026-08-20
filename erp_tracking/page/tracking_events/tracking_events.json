@@ -1,0 +1,15 @@
+{
+ "doctype": "Page",
+ "module": "ERP Tracking",
+ "name": "erp-tracking-events",
+ "page_name": "erp-tracking-events",
+ "title": "Events",
+ "standard": "Yes",
+ "system_page": 0,
+ "roles": [
+  {"role": "System Manager"},
+  {"role": "ERP Tracking Manager"},
+  {"role": "ERP Tracking User"},
+  {"role": "ERP Tracking Viewer"}
+ ]
+}
