@@ -1,8 +1,8 @@
 {
  "doctype": "Page",
  "module": "ERP Tracking",
- "name": "erp-tracking-maintenance",
- "page_name": "erp-tracking-maintenance",
+ "name": "tracking_maintenance",
+ "page_name": "tracking_maintenance",
  "title": "Maintenance",
  "standard": "Yes",
  "system_page": 0,

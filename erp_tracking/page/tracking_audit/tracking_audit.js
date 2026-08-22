@@ -1,7 +1,7 @@
 // Copyright (c) 2026, Your Company and contributors
 // For license information, please see license.txt
 
-frappe.pages["erp-tracking-audit"].on_page_load = function (wrapper) {
+frappe.pages["tracking_audit"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
 		title: __("Audit Logs"),
@@ -14,7 +14,7 @@ frappe.pages["erp-tracking-audit"].on_page_load = function (wrapper) {
 class AuditPage {
 	constructor(page) {
 		this.page = page;
-		this.$body = $(`<div class="erp-tracking-audit"></div>`).appendTo(page.body);
+		this.$body = $(`<div class="tracking_audit"></div>`).appendTo(page.body);
 		this._render_shell();
 	}
 
@@ -31,12 +31,12 @@ class AuditPage {
 				</div>
 				<button class="btn btn-primary erp-tracking-generate">${__("Generate")}</button>
 			</div>
-			<div class="erp-tracking-audit-table"></div>
+			<div class="tracking_audit-table"></div>
 		`);
 
 		this.$from = this.$body.find(".erp-tracking-from");
 		this.$to = this.$body.find(".erp-tracking-to");
-		this.$table = this.$body.find(".erp-tracking-audit-table");
+		this.$table = this.$body.find(".tracking_audit-table");
 
 		const from = frappe.datetime.add_days(frappe.datetime.now_datetime(), -1);
 		const to = frappe.datetime.now_datetime();

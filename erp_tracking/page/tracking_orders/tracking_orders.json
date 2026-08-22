@@ -1,8 +1,8 @@
 {
  "doctype": "Page",
  "module": "ERP Tracking",
- "name": "erp-tracking-orders",
- "page_name": "erp-tracking-orders",
+ "name": "tracking_orders",
+ "page_name": "tracking_orders",
  "title": "Orders",
  "standard": "Yes",
  "system_page": 0,

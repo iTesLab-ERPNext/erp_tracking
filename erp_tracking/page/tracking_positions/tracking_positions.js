@@ -6,7 +6,7 @@
 // this page renders itself rather than configuring erp_tracking.ListEngine.
 // It still reuses erp_tracking.status_badge for consistency.
 
-frappe.pages["erp-tracking-positions"].on_page_load = function (wrapper) {
+frappe.pages["tracking_positions"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
 		title: __("Live Positions"),
@@ -28,7 +28,7 @@ class LivePositionsPage {
 
 		this.page.set_primary_action(__("Refresh"), () => this.load_positions(true), "fa fa-refresh");
 
-		this.$body = $(`<div class="erp-tracking-positions"></div>`).appendTo(page.body);
+		this.$body = $(`<div class="tracking_positions"></div>`).appendTo(page.body);
 		this._render_shell();
 		this._load_reference_data();
 	}
@@ -49,7 +49,7 @@ class LivePositionsPage {
 					<option value="unknown">${__("Unknown")}</option>
 				</select>
 			</div>
-			<div class="erp-tracking-positions-body"></div>
+			<div class="tracking_positions-body"></div>
 			<div class="d-flex align-items-center justify-content-between mt-3">
 				<button class="btn btn-default btn-sm erp-tracking-prev">
 					<i class="fa fa-angle-left"></i> ${__("Previous")}
@@ -61,7 +61,7 @@ class LivePositionsPage {
 			</div>
 		`);
 
-		this.$listBody = this.$body.find(".erp-tracking-positions-body");
+		this.$listBody = this.$body.find(".tracking_positions-body");
 		this.$pageLabel = this.$body.find(".erp-tracking-page-label");
 
 		this.$body.find(".erp-tracking-device-filter").on("change", (e) => {

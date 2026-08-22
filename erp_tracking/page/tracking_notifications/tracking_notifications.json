@@ -1,8 +1,8 @@
 {
  "doctype": "Page",
  "module": "ERP Tracking",
- "name": "erp-tracking-notifications",
- "page_name": "erp-tracking-notifications",
+ "name": "tracking_notifications",
+ "page_name": "tracking_notifications",
  "title": "Notifications",
  "standard": "Yes",
  "system_page": 0,

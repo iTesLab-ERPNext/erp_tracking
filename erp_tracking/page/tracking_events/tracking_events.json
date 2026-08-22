@@ -1,8 +1,8 @@
 {
  "doctype": "Page",
  "module": "ERP Tracking",
- "name": "erp-tracking-events",
- "page_name": "erp-tracking-events",
+ "name": "tracking_events",
+ "page_name": "tracking_events",
  "title": "Events",
  "standard": "Yes",
  "system_page": 0,

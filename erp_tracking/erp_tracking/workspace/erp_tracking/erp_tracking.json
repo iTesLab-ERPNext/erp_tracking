@@ -1,0 +1,362 @@
+{
+ "charts": [],
+ "content": "[{\"id\": \"d8466f3b21\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>ERP Tracking</b></span>\", \"col\": 12}}, {\"id\": \"df2750d14f\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Dashboard\", \"col\": 3}}, {\"id\": \"d3f018afe1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Devices\", \"col\": 3}}, {\"id\": \"623ec56e19\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Live Positions\", \"col\": 3}}, {\"id\": \"eab6d505dd\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Reports\", \"col\": 3}}, {\"id\": \"ea85fb7240\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Traccar Settings\", \"col\": 3}}, {\"id\": \"81844f61bd\", \"type\": \"card\", \"data\": {\"card_name\": \"Fleet\", \"col\": 4}}, {\"id\": \"a2df7657c0\", \"type\": \"card\", \"data\": {\"card_name\": \"Tracking\", \"col\": 4}}, {\"id\": \"f3f9df63bb\", \"type\": \"card\", \"data\": {\"card_name\": \"Reports\", \"col\": 4}}, {\"id\": \"46d3996577\", \"type\": \"card\", \"data\": {\"card_name\": \"Geofencing & Alerts\", \"col\": 4}}, {\"id\": \"b44b8a13cb\", \"type\": \"card\", \"data\": {\"card_name\": \"Commands\", \"col\": 4}}, {\"id\": \"984d6823f6\", \"type\": \"card\", \"data\": {\"card_name\": \"Administration\", \"col\": 4}}, {\"id\": \"8bde5ab309\", \"type\": \"card\", \"data\": {\"card_name\": \"System\", \"col\": 4}}, {\"id\": \"4fea3141b6\", \"type\": \"card\", \"data\": {\"card_name\": \"Settings\", \"col\": 4}}]",
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "gps",
+ "idx": 0,
+ "indicator_color": "blue",
+ "is_hidden": 0,
+ "label": "ERP Tracking",
+ "links": [
+  {
+   "doctype": "Workspace Link",
+   "idx": 1,
+   "type": "Card Break",
+   "label": "Fleet",
+   "hidden": 0,
+   "onboard": 0,
+   "icon": "",
+   "link_count": 5
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 2,
+   "type": "Link",
+   "label": "Devices",
+   "link_type": "Page",
+   "link_to": "tracking_devices",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 3,
+   "type": "Link",
+   "label": "Groups",
+   "link_type": "Page",
+   "link_to": "tracking_groups",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 4,
+   "type": "Link",
+   "label": "Drivers",
+   "link_type": "Page",
+   "link_to": "tracking_drivers",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 5,
+   "type": "Link",
+   "label": "Maintenance",
+   "link_type": "Page",
+   "link_to": "tracking_maintenance",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 6,
+   "type": "Link",
+   "label": "Orders",
+   "link_type": "Page",
+   "link_to": "tracking_orders",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 7,
+   "type": "Card Break",
+   "label": "Tracking",
+   "hidden": 0,
+   "onboard": 0,
+   "icon": "",
+   "link_count": 4
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 8,
+   "type": "Link",
+   "label": "Live Positions",
+   "link_type": "Page",
+   "link_to": "tracking_positions",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 9,
+   "type": "Link",
+   "label": "Position History",
+   "link_type": "Page",
+   "link_to": "tracking_position_history",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 10,
+   "type": "Link",
+   "label": "Route",
+   "link_type": "Page",
+   "link_to": "tracking_route",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 11,
+   "type": "Link",
+   "label": "Live Camera",
+   "link_type": "Page",
+   "link_to": "tracking_live_video",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 12,
+   "type": "Card Break",
+   "label": "Reports",
+   "hidden": 0,
+   "onboard": 0,
+   "icon": "",
+   "link_count": 2
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 13,
+   "type": "Link",
+   "label": "Reports (Trips / Stops / Summary)",
+   "link_type": "Page",
+   "link_to": "tracking_reports",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 14,
+   "type": "Link",
+   "label": "Events",
+   "link_type": "Page",
+   "link_to": "tracking_events",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 15,
+   "type": "Card Break",
+   "label": "Geofencing & Alerts",
+   "hidden": 0,
+   "onboard": 0,
+   "icon": "",
+   "link_count": 2
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 16,
+   "type": "Link",
+   "label": "Geofences",
+   "link_type": "Page",
+   "link_to": "tracking_geofences",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 17,
+   "type": "Link",
+   "label": "Notifications",
+   "link_type": "Page",
+   "link_to": "tracking_notifications",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 18,
+   "type": "Card Break",
+   "label": "Commands",
+   "hidden": 0,
+   "onboard": 0,
+   "icon": "",
+   "link_count": 1
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 19,
+   "type": "Link",
+   "label": "Commands",
+   "link_type": "Page",
+   "link_to": "tracking_commands",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 20,
+   "type": "Card Break",
+   "label": "Administration",
+   "hidden": 0,
+   "onboard": 0,
+   "icon": "",
+   "link_count": 2
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 21,
+   "type": "Link",
+   "label": "Users",
+   "link_type": "Page",
+   "link_to": "tracking_users",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 22,
+   "type": "Link",
+   "label": "Audit Logs",
+   "link_type": "Page",
+   "link_to": "tracking_audit",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 23,
+   "type": "Card Break",
+   "label": "System",
+   "hidden": 0,
+   "onboard": 0,
+   "icon": "",
+   "link_count": 3
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 24,
+   "type": "Link",
+   "label": "Server Information",
+   "link_type": "Page",
+   "link_to": "tracking_server_info",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 25,
+   "type": "Link",
+   "label": "Server Health",
+   "link_type": "Page",
+   "link_to": "tracking_health",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 26,
+   "type": "Link",
+   "label": "Server Statistics",
+   "link_type": "Page",
+   "link_to": "tracking_statistics",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 27,
+   "type": "Card Break",
+   "label": "Settings",
+   "hidden": 0,
+   "onboard": 0,
+   "icon": "",
+   "link_count": 2
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 28,
+   "type": "Link",
+   "label": "Traccar Settings",
+   "link_type": "DocType",
+   "link_to": "Traccar Settings",
+   "onboard": 0,
+   "hidden": 0
+  },
+  {
+   "doctype": "Workspace Link",
+   "idx": 29,
+   "type": "Link",
+   "label": "Traccar Command Log",
+   "link_type": "DocType",
+   "link_to": "Traccar Command Log",
+   "onboard": 0,
+   "hidden": 0
+  }
+ ],
+ "modified": "2026-08-19 00:00:00.000000",
+ "module": "ERP Tracking",
+ "name": "ERP Tracking",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "roles": [],
+ "sequence_id": 1.0,
+ "shortcuts": [
+  {
+   "doctype": "Workspace Shortcut",
+   "label": "Dashboard",
+   "type": "Page",
+   "link_to": "erp-tracking-dashboard",
+   "icon": "gps",
+   "color": "Blue",
+   "stats_filter": "{}"
+  },
+  {
+   "doctype": "Workspace Shortcut",
+   "label": "Devices",
+   "type": "Page",
+   "link_to": "tracking_devices",
+   "icon": "gps",
+   "color": "Blue",
+   "stats_filter": "{}"
+  },
+  {
+   "doctype": "Workspace Shortcut",
+   "label": "Live Positions",
+   "type": "Page",
+   "link_to": "tracking_positions",
+   "icon": "gps",
+   "color": "Blue",
+   "stats_filter": "{}"
+  },
+  {
+   "doctype": "Workspace Shortcut",
+   "label": "Reports",
+   "type": "Page",
+   "link_to": "tracking_reports",
+   "icon": "gps",
+   "color": "Blue",
+   "stats_filter": "{}"
+  },
+  {
+   "doctype": "Workspace Shortcut",
+   "label": "Traccar Settings",
+   "type": "DocType",
+   "link_to": "Traccar Settings",
+   "icon": "settings",
+   "color": "Blue",
+   "stats_filter": "{}"
+  }
+ ],
+ "title": "ERP Tracking"
+}

@@ -1,7 +1,7 @@
 // Copyright (c) 2026, Your Company and contributors
 // For license information, please see license.txt
 
-frappe.pages["erp-tracking-reports"].on_page_load = function (wrapper) {
+frappe.pages["tracking_reports"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
 		title: __("Reports"),
@@ -88,7 +88,7 @@ class ReportsHubPage {
 		this.instances = {};
 
 		this.$body = $(`
-			<div class="erp-tracking-reports-hub">
+			<div class="tracking_reports-hub">
 				<ul class="nav nav-tabs mb-3 erp-tracking-report-tabs"></ul>
 				<div class="erp-tracking-report-panels"></div>
 			</div>

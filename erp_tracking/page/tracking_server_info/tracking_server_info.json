@@ -1,8 +1,8 @@
 {
  "doctype": "Page",
  "module": "ERP Tracking",
- "name": "erp-tracking-server-info",
- "page_name": "erp-tracking-server-info",
+ "name": "tracking_server_info",
+ "page_name": "tracking_server_info",
  "title": "Server Information",
  "standard": "Yes",
  "system_page": 0,

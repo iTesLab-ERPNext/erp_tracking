@@ -1,7 +1,7 @@
 // Copyright (c) 2026, Your Company and contributors
 // For license information, please see license.txt
 
-frappe.pages["erp-tracking-notifications"].on_page_load = function (wrapper) {
+frappe.pages["tracking_notifications"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
 		title: __("Notifications"),

@@ -15,7 +15,7 @@ function ensure_chartjs(callback) {
 	frappe.require(CHARTJS_URL, callback);
 }
 
-frappe.pages["erp-tracking-statistics"].on_page_load = function (wrapper) {
+frappe.pages["tracking_statistics"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
 		title: __("Server Statistics"),
@@ -29,7 +29,7 @@ class StatisticsPage {
 	constructor(page) {
 		this.page = page;
 		this.chart = null;
-		this.$body = $(`<div class="erp-tracking-statistics"></div>`).appendTo(page.body);
+		this.$body = $(`<div class="tracking_statistics"></div>`).appendTo(page.body);
 		this._render_shell();
 	}
 

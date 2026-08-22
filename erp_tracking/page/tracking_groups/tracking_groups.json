@@ -1,8 +1,8 @@
 {
  "doctype": "Page",
  "module": "ERP Tracking",
- "name": "erp-tracking-groups",
- "page_name": "erp-tracking-groups",
+ "name": "tracking_groups",
+ "page_name": "tracking_groups",
  "title": "Groups",
  "standard": "Yes",
  "system_page": 0,

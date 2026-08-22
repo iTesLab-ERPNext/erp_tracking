@@ -1,8 +1,8 @@
 {
  "doctype": "Page",
  "module": "ERP Tracking",
- "name": "erp-tracking-position-history",
- "page_name": "erp-tracking-position-history",
+ "name": "tracking_position_history",
+ "page_name": "tracking_position_history",
  "title": "Position History",
  "standard": "Yes",
  "system_page": 0,

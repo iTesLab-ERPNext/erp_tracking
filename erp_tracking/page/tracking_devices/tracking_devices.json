@@ -1,8 +1,8 @@
 {
  "doctype": "Page",
  "module": "ERP Tracking",
- "name": "erp-tracking-devices",
- "page_name": "erp-tracking-devices",
+ "name": "tracking_devices",
+ "page_name": "tracking_devices",
  "title": "Devices",
  "standard": "Yes",
  "system_page": 0,

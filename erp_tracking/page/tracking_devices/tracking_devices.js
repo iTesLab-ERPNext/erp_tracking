@@ -1,7 +1,7 @@
 // Copyright (c) 2026, Your Company and contributors
 // For license information, please see license.txt
 
-frappe.pages["erp-tracking-devices"].on_page_load = function (wrapper) {
+frappe.pages["tracking_devices"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
 		title: __("Devices"),
@@ -233,7 +233,7 @@ function render_device_maintenance($wrapper, device) {
 			if (!items.length) {
 				$wrapper.html(`
 					<div class="text-muted text-center p-4">${__("No maintenance items linked to this device.")}</div>
-					<div class="text-center"><a href="/app/erp-tracking-maintenance">${__("Open Maintenance")}</a></div>
+					<div class="text-center"><a href="/app/tracking_maintenance">${__("Open Maintenance")}</a></div>
 				`);
 				return;
 			}
@@ -275,7 +275,7 @@ function render_device_commands($tabBody, device) {
 					<thead><tr><th>${__("Description")}</th><th>${__("Type")}</th></tr></thead>
 					<tbody>${rows}</tbody>
 				</table>
-				<div class="text-center mt-2"><a href="/app/erp-tracking-commands">${__("Open Commands")}</a></div>
+				<div class="text-center mt-2"><a href="/app/tracking_commands">${__("Open Commands")}</a></div>
 			`);
 		},
 	});
@@ -297,7 +297,7 @@ function render_device_geofences($wrapper, device) {
 			if (!geofences.length) {
 				$wrapper.html(`
 					<div class="text-muted text-center p-4">${__("No geofences linked to this device.")}</div>
-					<div class="text-center"><a href="/app/erp-tracking-geofences">${__("Open Geofences")}</a></div>
+					<div class="text-center"><a href="/app/tracking_geofences">${__("Open Geofences")}</a></div>
 				`);
 				return;
 			}

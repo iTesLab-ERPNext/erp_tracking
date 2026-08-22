@@ -21,7 +21,7 @@ function ensure_hlsjs(callback) {
 	frappe.require(HLS_JS_URL, callback);
 }
 
-frappe.pages["erp-tracking-live-video"].on_page_load = function (wrapper) {
+frappe.pages["tracking_live_video"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
 		title: __("Live Camera"),
@@ -35,7 +35,7 @@ class LiveVideoPage {
 	constructor(page) {
 		this.page = page;
 		this.hls = null;
-		this.$body = $(`<div class="erp-tracking-live-video"></div>`).appendTo(page.body);
+		this.$body = $(`<div class="tracking_live_video"></div>`).appendTo(page.body);
 		this._render_shell();
 		this._load_devices();
 	}

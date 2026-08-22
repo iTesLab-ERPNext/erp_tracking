@@ -1,8 +1,8 @@
 {
  "doctype": "Page",
  "module": "ERP Tracking",
- "name": "erp-tracking-positions",
- "page_name": "erp-tracking-positions",
+ "name": "tracking_positions",
+ "page_name": "tracking_positions",
  "title": "Live Positions",
  "standard": "Yes",
  "system_page": 0,

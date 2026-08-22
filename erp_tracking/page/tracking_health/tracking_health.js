@@ -3,7 +3,7 @@
 
 const HEALTH_AUTO_REFRESH_MS = 30000;
 
-frappe.pages["erp-tracking-health"].on_page_load = function (wrapper) {
+frappe.pages["tracking_health"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
 		title: __("Server Health"),
@@ -11,10 +11,10 @@ frappe.pages["erp-tracking-health"].on_page_load = function (wrapper) {
 	});
 
 	const $body = $(`
-		<div class="erp-tracking-health text-center p-5">
-			<div class="erp-tracking-health-icon" style="font-size: 4em;">⚪</div>
-			<div class="erp-tracking-health-status h3 mt-2"></div>
-			<div class="text-muted erp-tracking-health-detail mt-3"></div>
+		<div class="tracking_health text-center p-5">
+			<div class="tracking_health-icon" style="font-size: 4em;">⚪</div>
+			<div class="tracking_health-status h3 mt-2"></div>
+			<div class="text-muted tracking_health-detail mt-3"></div>
 		</div>
 	`).appendTo(page.body);
 
@@ -38,14 +38,14 @@ frappe.pages["erp-tracking-health"].on_page_load = function (wrapper) {
 		const now = frappe.datetime.now_datetime();
 
 		if (is_config) {
-			$body.find(".erp-tracking-health-icon").text("⚪");
-			$body.find(".erp-tracking-health-status").html(__("Not Configured"));
+			$body.find(".tracking_health-icon").text("⚪");
+			$body.find(".tracking_health-status").html(__("Not Configured"));
 		} else if (result.healthy) {
-			$body.find(".erp-tracking-health-icon").text("🟢");
-			$body.find(".erp-tracking-health-status").html(`<span class="text-success">${__("HEALTHY")}</span>`);
+			$body.find(".tracking_health-icon").text("🟢");
+			$body.find(".tracking_health-status").html(`<span class="text-success">${__("HEALTHY")}</span>`);
 		} else {
-			$body.find(".erp-tracking-health-icon").text("🔴");
-			$body.find(".erp-tracking-health-status").html(`<span class="text-danger">${__("UNAVAILABLE")}</span>`);
+			$body.find(".tracking_health-icon").text("🔴");
+			$body.find(".tracking_health-status").html(`<span class="text-danger">${__("UNAVAILABLE")}</span>`);
 		}
 
 		const detail_lines = [];
@@ -57,7 +57,7 @@ frappe.pages["erp-tracking-health"].on_page_load = function (wrapper) {
 			detail_lines.push(frappe.utils.escape_html(result.message));
 		}
 
-		$body.find(".erp-tracking-health-detail").html(detail_lines.join("<br>"));
+		$body.find(".tracking_health-detail").html(detail_lines.join("<br>"));
 	}
 
 	check();

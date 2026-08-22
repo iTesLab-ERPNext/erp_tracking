@@ -5,6 +5,32 @@ native Desk app (no separate React frontend).
 
 ## Status: Phase 8 of 8 complete — project delivered
 
+### Second build fix (critical — affects every page from Phase 2 onward)
+The earlier `hooks.py`/bundle-naming fix was necessary but not sufficient.
+The real, larger cause of the same `esbuild` crash
+(`TypeError [ERR_INVALID_ARG_TYPE]: The "paths[0]" argument must be of type
+string. Received undefined`) was that **20 of the 21 custom Pages had a
+folder name that didn't match their Page record's `name` field.** Frappe
+requires a Page's asset folder to equal `scrub(name)` exactly (lowercased,
+hyphens→underscores) — e.g. a page named `erp-tracking-devices` must live
+in `page/erp_tracking_devices/`. Pages were built with spec-matching folder
+names like `tracking_devices` but hyphenated route names like
+`erp-tracking-devices` for nicer URLs, and the two were never reconciled.
+When `bench build`'s asset scanner tried to resolve each page's JS file by
+the expected (but nonexistent) path, it hit the `undefined` that crashed
+`path.resolve()`.
+
+**Fixed**: every affected Page's `name`/`page_name` now matches its actual
+folder exactly (e.g. `tracking_devices`, not `erp-tracking-devices`), and
+every `frappe.pages["..."]` registration key, Dashboard quick-action route,
+and cross-page link was updated to match. Verified two ways: (1) every
+page's `scrub(name)` now equals its folder name and a `<name>.js` file
+exists at that path, and (2) no page name collides with another. The
+`erp-tracking-dashboard` page was untouched — its folder
+(`erp_tracking_dashboard`) already matched correctly, which is exactly why
+it never triggered this bug and why the first fix alone looked plausible
+but wasn't the whole story.
+
 **Phase 1-7** — done (foundation; Dashboard/Devices/Groups/Users; Live
 Positions/History/Route; Trips/Stops/Summary/Events reports;
 Geofences/Notifications/Commands; Drivers/Maintenance/Calendars;
@@ -102,7 +128,36 @@ and `GET /reports/events` (events for devices/groups over a time range). The
 live Events page will be built on `/reports/events`, not on `/events`. See
 the docstring in `config.py` for details.
 
-## Directory layout
+## Sidebar / Workspace
+
+`erp_tracking/erp_tracking/workspace/erp_tracking/erp_tracking.json` gives
+the app a proper entry in the Desk sidebar. Frappe v15 sidebar navigation
+is driven entirely by the **Workspace** doctype — the old
+`config/desktop.py` module-icon system (still present here, harmless, for
+compatibility with anything that reads it) is not what actually puts an
+app in the sidebar in v15.
+
+The workspace includes:
+- A header and 5 shortcuts (Dashboard, Devices, Live Positions, Reports,
+  Traccar Settings)
+- 8 cards grouping all 21 pages by category, matching the navigation
+  structure from Section 46: Fleet, Tracking, Reports, Geofencing & Alerts,
+  Commands, Administration, System, Settings
+
+The workspace itself is visible to everyone (`public: 1`, no role
+restriction) so any user can see the sidebar and navigate — the individual
+pages and DocTypes it links to enforce their own role restrictions when
+clicked (e.g. a `ERP Tracking User` clicking into **Commands** still gets
+blocked, per the permission matrix above). Every link/shortcut in the
+workspace was cross-checked programmatically against the actual page and
+DocType names in this package to make sure nothing points at something
+that doesn't exist.
+
+No extra installation step is needed — `bench migrate` picks up workspace
+files the same way it picks up Page and DocType JSON files already in the
+app.
+
+
 
 ```
 erp_tracking/
@@ -143,14 +198,17 @@ erp_tracking/
     │       ├── stream.py          # Phase 8 (Live Video proxy - see docstring)
     │       └── utils.py           # date/pagination helpers
     ├── erp_tracking/
-    │   └── doctype/
-    │       ├── traccar_settings/
-    │       │   ├── traccar_settings.json
-    │       │   ├── traccar_settings.py   # validate() + test_connection()
-    │       │   └── traccar_settings.js   # Test Connection button + status
-    │       └── traccar_command_log/      # Phase 5: local send-command audit trail
-    │           ├── traccar_command_log.json
-    │           └── traccar_command_log.py
+    │   ├── doctype/
+    │   │   ├── traccar_settings/
+    │   │   │   ├── traccar_settings.json
+    │   │   │   ├── traccar_settings.py   # validate() + test_connection()
+    │   │   │   └── traccar_settings.js   # Test Connection button + status
+    │   │   └── traccar_command_log/      # Phase 5: local send-command audit trail
+    │   │       ├── traccar_command_log.json
+    │   │       └── traccar_command_log.py
+    │   └── workspace/
+    │       └── erp_tracking/
+    │           └── erp_tracking.json     # sidebar entry (shortcuts + cards)
     ├── page/
     │   ├── erp_tracking_dashboard/
     │   ├── tracking_devices/
@@ -423,6 +481,10 @@ permission checks for Orders and Live Video.
     Language → Français) and confirm page titles and common labels (e.g.
     "Véhicules" for Devices, "Positions en temps réel" for Live Positions,
     "Tester la connexion" for Test Connection) render in French.
+30. Refresh Desk and confirm **ERP Tracking** now appears in the left
+    sidebar. Click it and confirm the workspace opens with shortcuts at
+    the top and the 8 category cards below, and that every link in every
+    card actually opens its corresponding page instead of a 404.
 
 ## Project status
 

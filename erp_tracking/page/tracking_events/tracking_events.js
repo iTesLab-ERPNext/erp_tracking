@@ -8,7 +8,7 @@
 // Section 21) are the same ReportPage export buttons used by Trips/Stops/
 // Summary, just configured for the "events" report key.
 
-frappe.pages["erp-tracking-events"].on_page_load = function (wrapper) {
+frappe.pages["tracking_events"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
 		title: __("Events"),

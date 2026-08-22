@@ -1,7 +1,7 @@
 // Copyright (c) 2026, Your Company and contributors
 // For license information, please see license.txt
 
-frappe.pages["erp-tracking-server-info"].on_page_load = function (wrapper) {
+frappe.pages["tracking_server_info"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
 		title: __("Server Information"),

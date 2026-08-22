@@ -5,7 +5,7 @@
 // cdnjs (already an allowed CDN for this environment) only when the page is
 // opened - no other page in the app pulls in a mapping library.
 
-frappe.pages["erp-tracking-route"].on_page_load = function (wrapper) {
+frappe.pages["tracking_route"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
 		title: __("Route"),
@@ -33,7 +33,7 @@ class RoutePage {
 	constructor(page) {
 		this.page = page;
 		this.map = null;
-		this.$body = $(`<div class="erp-tracking-route"></div>`).appendTo(page.body);
+		this.$body = $(`<div class="tracking_route"></div>`).appendTo(page.body);
 		this._render_shell();
 		this._load_reference_data();
 	}
@@ -59,16 +59,16 @@ class RoutePage {
 				</div>
 				<button class="btn btn-primary erp-tracking-generate">${__("Generate")}</button>
 			</div>
-			<div class="erp-tracking-route-map mb-3" style="height: 420px; border: 1px solid var(--border-color); border-radius: 6px;"></div>
-			<div class="erp-tracking-route-table"></div>
+			<div class="tracking_route-map mb-3" style="height: 420px; border: 1px solid var(--border-color); border-radius: 6px;"></div>
+			<div class="tracking_route-table"></div>
 		`);
 
 		this.$deviceSelect = this.$body.find(".erp-tracking-device-select");
 		this.$groupSelect = this.$body.find(".erp-tracking-group-select");
 		this.$from = this.$body.find(".erp-tracking-from");
 		this.$to = this.$body.find(".erp-tracking-to");
-		this.$mapEl = this.$body.find(".erp-tracking-route-map");
-		this.$table = this.$body.find(".erp-tracking-route-table");
+		this.$mapEl = this.$body.find(".tracking_route-map");
+		this.$table = this.$body.find(".tracking_route-table");
 
 		const from = frappe.datetime.add_days(frappe.datetime.now_datetime(), -1);
 		const to = frappe.datetime.now_datetime();

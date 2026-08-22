@@ -1,7 +1,7 @@
 // Copyright (c) 2026, Your Company and contributors
 // For license information, please see license.txt
 
-frappe.pages["erp-tracking-position-history"].on_page_load = function (wrapper) {
+frappe.pages["tracking_position_history"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
 		title: __("Position History"),
@@ -19,7 +19,7 @@ class PositionHistoryPage {
 		this.to_date = frappe.datetime.now_datetime();
 		this.positions = [];
 
-		this.$body = $(`<div class="erp-tracking-position-history"></div>`).appendTo(page.body);
+		this.$body = $(`<div class="tracking_position_history"></div>`).appendTo(page.body);
 		this._render_shell();
 		this._load_devices();
 	}

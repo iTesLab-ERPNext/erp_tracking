@@ -1,8 +1,8 @@
 {
  "doctype": "Page",
  "module": "ERP Tracking",
- "name": "erp-tracking-geofences",
- "page_name": "erp-tracking-geofences",
+ "name": "tracking_geofences",
+ "page_name": "tracking_geofences",
  "title": "Geofences",
  "standard": "Yes",
  "system_page": 0,

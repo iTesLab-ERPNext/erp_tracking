@@ -1,8 +1,8 @@
 {
  "doctype": "Page",
  "module": "ERP Tracking",
- "name": "erp-tracking-statistics",
- "page_name": "erp-tracking-statistics",
+ "name": "tracking_statistics",
+ "page_name": "tracking_statistics",
  "title": "Server Statistics",
  "standard": "Yes",
  "system_page": 0,

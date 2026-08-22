@@ -1,8 +1,8 @@
 {
  "doctype": "Page",
  "module": "ERP Tracking",
- "name": "erp-tracking-drivers",
- "page_name": "erp-tracking-drivers",
+ "name": "tracking_drivers",
+ "page_name": "tracking_drivers",
  "title": "Drivers",
  "standard": "Yes",
  "system_page": 0,
