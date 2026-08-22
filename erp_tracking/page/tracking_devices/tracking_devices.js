@@ -65,15 +65,17 @@ function show_device_details(device) {
 	});
 }
 
+const IS_MANAGER = frappe.user_roles.some((r) => ["System Manager", "ERP Tracking Manager"].includes(r));
+
 const TABS = [
 	{ key: "overview", label: __("Overview"), available: true },
 	{ key: "positions", label: __("Positions"), available: true },
 	{ key: "trips", label: __("Trips"), available: true },
 	{ key: "stops", label: __("Stops"), available: true },
 	{ key: "events", label: __("Events"), available: true },
-	{ key: "maintenance", label: __("Maintenance"), available: false },
-	{ key: "commands", label: __("Commands"), available: false },
-	{ key: "geofences", label: __("Geofences"), available: false },
+	{ key: "maintenance", label: __("Maintenance"), available: true },
+	{ key: "commands", label: __("Commands"), available: IS_MANAGER, unavailable_reason: __("Manager only") },
+	{ key: "geofences", label: __("Geofences"), available: true },
 ];
 
 function render_tabs(dialog, device) {
@@ -83,7 +85,7 @@ function render_tabs(dialog, device) {
 			<li class="nav-item">
 				<a class="nav-link ${t.key === "overview" ? "active" : ""} ${t.available ? "" : "disabled"}"
 					data-tab="${t.key}" href="#"
-					title="${t.available ? "" : __("Available in a later phase")}">${t.label}</a>
+					title="${t.available ? "" : t.unavailable_reason}">${t.label}</a>
 			</li>
 		`
 	).join("");
@@ -101,6 +103,9 @@ function render_tabs(dialog, device) {
 		if (tab_key === "trips") return render_device_report($tabBody, device, "trips");
 		if (tab_key === "stops") return render_device_report($tabBody, device, "stops");
 		if (tab_key === "events") return render_device_report($tabBody, device, "events");
+		if (tab_key === "maintenance") return render_device_maintenance($tabBody, device);
+		if (tab_key === "commands") return render_device_commands($tabBody, device);
+		if (tab_key === "geofences") return render_device_geofences($tabBody, device);
 	};
 
 	$wrapper.find(".erp-tracking-device-tabs a").on("click", (e) => {
@@ -207,6 +212,103 @@ function render_device_report($wrapper, device, report_key) {
 			$wrapper.html(`
 				<div class="text-muted small mb-2">${__("Last 7 days ({0} records). See Reports for full filters and export.", [rows.length])}</div>
 				<pre style="max-height:300px; overflow:auto;">${frappe.utils.escape_html(JSON.stringify(rows.slice(0, 20), null, 2))}</pre>
+			`);
+		},
+	});
+}
+
+function render_device_maintenance($wrapper, device) {
+	$wrapper.html(`<div class="text-muted text-center p-4">${__("Loading...")}</div>`);
+
+	frappe.call({
+		method: "erp_tracking.api.get_maintenance_items",
+		args: { device_id: device.id },
+		callback: (r) => {
+			const result = r.message || {};
+			if (!result.success) {
+				$wrapper.html(`<div class="text-muted text-center p-4">🔴 ${frappe.utils.escape_html(result.message || __("Unable to load maintenance items."))}</div>`);
+				return;
+			}
+			const items = result.data || [];
+			if (!items.length) {
+				$wrapper.html(`
+					<div class="text-muted text-center p-4">${__("No maintenance items linked to this device.")}</div>
+					<div class="text-center"><a href="/app/erp-tracking-maintenance">${__("Open Maintenance")}</a></div>
+				`);
+				return;
+			}
+			const rows = items
+				.map((m) => `<tr><td>${frappe.utils.escape_html(m.name)}</td><td>${frappe.utils.escape_html(m.type)}</td><td>${m.start}</td><td>${m.period}</td></tr>`)
+				.join("");
+			$wrapper.html(`
+				<table class="table table-bordered table-hover">
+					<thead><tr><th>${__("Name")}</th><th>${__("Type")}</th><th>${__("Start")}</th><th>${__("Period")}</th></tr></thead>
+					<tbody>${rows}</tbody>
+				</table>
+			`);
+		},
+	});
+}
+
+function render_device_commands($tabBody, device) {
+	$tabBody.html(`<div class="text-muted text-center p-4">${__("Loading...")}</div>`);
+
+	frappe.call({
+		method: "erp_tracking.api.get_available_commands_for_device",
+		args: { device_id: device.id },
+		callback: (r) => {
+			const result = r.message || {};
+			if (!result.success) {
+				$tabBody.html(`<div class="text-muted text-center p-4">🔴 ${frappe.utils.escape_html(result.message || __("Unable to load commands."))}</div>`);
+				return;
+			}
+			const commands = result.data || [];
+			if (!commands.length) {
+				$tabBody.html(`<div class="text-muted text-center p-4">${__("No saved commands support this device's protocol.")}</div>`);
+				return;
+			}
+			const rows = commands
+				.map((c) => `<tr><td>${frappe.utils.escape_html(c.description || c.type)}</td><td>${frappe.utils.escape_html(c.type)}</td></tr>`)
+				.join("");
+			$tabBody.html(`
+				<table class="table table-bordered table-hover">
+					<thead><tr><th>${__("Description")}</th><th>${__("Type")}</th></tr></thead>
+					<tbody>${rows}</tbody>
+				</table>
+				<div class="text-center mt-2"><a href="/app/erp-tracking-commands">${__("Open Commands")}</a></div>
+			`);
+		},
+	});
+}
+
+function render_device_geofences($wrapper, device) {
+	$wrapper.html(`<div class="text-muted text-center p-4">${__("Loading...")}</div>`);
+
+	frappe.call({
+		method: "erp_tracking.api.get_geofences",
+		args: { device_id: device.id },
+		callback: (r) => {
+			const result = r.message || {};
+			if (!result.success) {
+				$wrapper.html(`<div class="text-muted text-center p-4">🔴 ${frappe.utils.escape_html(result.message || __("Unable to load geofences."))}</div>`);
+				return;
+			}
+			const geofences = result.data || [];
+			if (!geofences.length) {
+				$wrapper.html(`
+					<div class="text-muted text-center p-4">${__("No geofences linked to this device.")}</div>
+					<div class="text-center"><a href="/app/erp-tracking-geofences">${__("Open Geofences")}</a></div>
+				`);
+				return;
+			}
+			const rows = geofences
+				.map((g) => `<tr><td>${frappe.utils.escape_html(g.name)}</td><td>${frappe.utils.escape_html(g.description || "—")}</td></tr>`)
+				.join("");
+			$wrapper.html(`
+				<table class="table table-bordered table-hover">
+					<thead><tr><th>${__("Name")}</th><th>${__("Description")}</th></tr></thead>
+					<tbody>${rows}</tbody>
+				</table>
 			`);
 		},
 	});

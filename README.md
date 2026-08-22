@@ -3,64 +3,98 @@
 Traccar GPS tracking integration for **ERPNext v15 / Frappe v15**, built as a
 native Desk app (no separate React frontend).
 
-## Status: Phase 5 of 8 complete
+## Status: Phase 8 of 8 complete — project delivered
 
-**Phase 1-4** — done (foundation, Dashboard/Devices/Groups/Users, Live
-Positions/History/Route, Trips/Stops/Summary/Events reports). See prior
-notes below.
+**Phase 1-7** — done (foundation; Dashboard/Devices/Groups/Users; Live
+Positions/History/Route; Trips/Stops/Summary/Events reports;
+Geofences/Notifications/Commands; Drivers/Maintenance/Calendars;
+Server Info/Health/Statistics/Audit). See prior notes below.
 
-**Phase 5** (this delivery) — done. First phase with real write operations:
-- `integrations/traccar/geofences.py` — full CRUD (the spec supports
-  create/update/delete, so per Section 22 this implements all of it, not
-  just list/get)
-- `integrations/traccar/notifications.py` — full CRUD plus
-  `/notifications/types`, `/notifications/notificators`, and
-  `/notifications/test` (send-test)
-- `integrations/traccar/commands.py` — saved command CRUD,
-  `/commands/types` (optionally scoped to a device, for protocol-specific
-  command lists), `/commands/send` (device-specific supported commands),
-  and `send_command()` for dispatching a new or saved command
-- **New `Traccar Command Log` DocType** — a local audit trail written
-  server-side every time `send_command` succeeds (who, when, what, to
-  which device/group, sent-vs-queued). No role has *create* permission on
-  it directly — it can only be inserted by `api.send_command` itself — so
-  it can't be forged from the client. This is separate from Traccar's own
-  `/audit` endpoint (Section 33, Phase 7), which reflects actions on the
-  Traccar server itself.
-- **Permission split, decided explicitly**: Geofence reads use the normal
-  `require_read()` (Manager/User/Viewer); geofence writes need
-  `require_write()` (Manager/User — Viewer stays read-only, matching
-  Section 40). Notifications and Commands are gated with `require_admin()`
-  end-to-end (Manager only) — Section 40's role table only lists
-  "Commands"/"Administration" under Manager, and Section 25 demands
-  "strict permission checking" specifically for sending commands.
-- `api.py`: `get_geofences/create/update/delete_geofence`,
-  `get_notifications/get_notification_types/get_notificators/create/
-  update/delete_notification/send_test_notification`,
-  `get_commands/get_command/get_command_types/
-  get_available_commands_for_device/create/update/delete_saved_command/
-  send_command`
-- Pages: **Geofences** (list + create/edit/delete dialog, WKT area field,
-  New/Edit hidden client-side for Viewer-only users though the server
-  enforces it regardless), **Notifications** (Manager-only page; CRUD
-  dialog whose Type/Notificator options are fetched live from Traccar
-  rather than hardcoded, plus a Send Test Notification menu item),
-  **Commands** (Manager-only page; Saved Commands CRUD list, and a Send
-  Command dialog whose Command Type dropdown repopulates per selected
-  device via `/commands/types?deviceId=`, showing 🟢 "Command sent" or 🟠
-  "Command queued" per the actual `status_code` Traccar returned)
-- Dashboard's Geofences count now goes through `geofences.py` instead of
-  the temporary direct-client call noted in the Phase 2-4 deliveries
-- Tests: geofence CRUD + cache invalidation on write, notification types/
-  notificators/create/send-test, command send (both 200-sent and
-  202-queued outcomes), command-type-per-device parameter passing, and
-  permission checks proving a Guest can't send a command, create a
-  geofence, or even view the notifications list
+**Phase 8** (this delivery) — done. Final phase:
+- `integrations/traccar/orders.py` — full CRUD (Section 34), same
+  read/write split as Drivers/Geofences. No Export button, matching the
+  Maintenance decision (Phase 6) — no native export endpoint exists for
+  Orders in the spec.
+- **`integrations/traccar/stream.py`** — Live Video (Section 35). This
+  phase surfaces a genuine conflict in the brief: Section 35 says "don't
+  proxy video through ERPNext unnecessarily," but the only alternative
+  (Traccar's documented `?token=` query-string workaround for browser
+  video players) hands the frontend a token — which Section 41 explicitly
+  forbids ("never receive passwords, API keys, tokens or Authorization
+  headers"). Resolved by proxying deliberately: the HLS playlist and every
+  `.ts` segment are fetched server-side (real credentials touch only that
+  server-side request, exactly like every other endpoint in the app), and
+  the playlist's segment references are rewritten to point back at this
+  app's own whitelisted `get_stream_segment` endpoint. The browser's video
+  player only ever talks to ERPNext over the user's already-authenticated
+  Frappe session. Full reasoning is in the module's docstring.
+- **A second binary-parsing bug caught before shipping** (same class as
+  the Phase 4 XLSX bug): `TraccarClient._parse_body` didn't recognize
+  `application/vnd.apple.mpegurl` (the HLS playlist's MIME type) as text —
+  it doesn't start with `text/` or contain `xml`, so it would have been
+  returned as raw bytes and broken `stream.py`'s segment-URL rewriting.
+  Fixed with an explicit `mpegurl` check and a regression test proving the
+  playlist comes back as a string, not bytes.
+- `api.py`: `get_orders/get_order/create/update/delete_order`,
+  `get_stream_playlist`, `get_stream_segment`
+- Pages: **Orders** (list + CRUD dialog), **Live Camera** (device/channel
+  picker, hls.js lazy-loaded from cdnjs mirroring the Leaflet/Chart.js
+  pattern, `<video>` src always points at this app's own proxy endpoint —
+  never at Traccar directly; Safari's native HLS support is used as a
+  fallback when hls.js isn't needed)
+- **Devices detail dialog closed out**: the Maintenance/Commands/Geofences
+  tabs (visibly disabled since Phase 2, with a note that they'd arrive in
+  a later phase) are now live, each showing a compact device-scoped view
+  with a link to the full page. Commands stays visibly disabled for
+  non-Manager users specifically (tooltip: "Manager only"), matching that
+  resource's actual permission gate rather than a blanket "coming later."
+- **French translations** (Section 47): `translations/fr.csv`, 138
+  entries covering every page title, nav label, status string, and common
+  action across the app — not just the handful of examples the brief
+  listed. Loaded automatically by Frappe's i18n system; no build step
+  needed beyond a normal `bench build`.
+- Tests: Orders CRUD + cache invalidation, the playlist-rewriting logic
+  (segment references replaced, comment/tag lines left untouched), the
+  `mpegurl` parsing regression test, segment byte-proxying, proof that
+  stream endpoints correctly still require normal authentication (unlike
+  `/server` and `/health` from Phase 7), and permission checks for both
+  new resources
 
-**Not yet built** (Phases 6-8):
-Drivers, Maintenance, Calendars, Orders, Server/Health/Statistics/Audit
-pages, Live Video, French translations, and a dedicated export system
-beyond what's already native-endpoint-backed in Phases 3-4.
+## Closing the permission matrix (Section 40)
+
+Every whitelisted method in the app goes through exactly one of three
+checks from `permissions.py` — no page or endpoint was left ungated.
+"Read" below means list/get; "Write" means create/update/delete (or
+send, for Commands):
+
+| Resource | Manager | User | Viewer | Notes |
+|---|---|---|---|---|
+| Traccar Settings, Test Connection | ✅ | ❌ | ❌ | credentials — Manager only |
+| Dashboard | ✅ read | ✅ read | ✅ read | |
+| Devices, Groups, Users | ✅ read/write¹ | ✅ read/write¹ | ✅ read | ¹Devices/Groups/Users have no write endpoints exposed in this app (Traccar itself supports them; not wired here — read-only by design) |
+| Live Positions, Position History, Route | ✅ | ✅ | ✅ | read-only resources |
+| Reports (Trips/Stops/Summary/Events) | ✅ | ✅ | ✅ | read-only; export uses the same read gate |
+| Geofences | ✅ read/write | ✅ read/write | ✅ read | |
+| Drivers, Maintenance | ✅ read/write | ✅ read/write | ✅ read | |
+| Orders | ✅ read/write | ✅ read/write | ✅ read | |
+| Notifications | ✅ | ❌ | ❌ | routes real email/SMS — Manager only |
+| Commands (saved + send) | ✅ | ❌ | ❌ | Section 25: strict permission checking |
+| Calendars | ✅ | ❌ | ❌ | admin scheduling primitive |
+| Server Information (read) | ✅ | ✅ | ✅ | not sensitive |
+| Server Information (update) | ✅ | ❌ | ❌ | |
+| Server Health | ✅ | ✅ | ✅ | |
+| Server Statistics | ✅ | ❌ | ❌ | Section 40 System/Administration grouping |
+| Audit Logs | ✅ | ❌ | ❌ | spec's own description: "Admin only" |
+| Live Video | ✅ | ✅ | ✅ | read-only |
+
+Every row above is enforced twice: once at the Frappe **Page** level
+(the `roles` array in each page's `.json`, so the page doesn't even load
+for an unauthorized user) and once at the **API** level (`require_read()` /
+`require_write()` / `require_admin()` in every whitelisted method in
+`api.py`), so a user can't route around the UI restriction by calling the
+API directly. Every phase's test suite includes at least one Guest-user
+(and, where relevant, a wrong-role) check proving this — see the
+`TestPhaseNPermissions` classes across `tests/`.
 
 One correction versus a literal reading of the brief: the OpenAPI spec has
 **no `GET /events` list endpoint** — only `GET /events/{id}` (single event)
@@ -99,6 +133,14 @@ erp_tracking/
     │       ├── geofences.py       # Phase 5 (full CRUD)
     │       ├── notifications.py   # Phase 5 (full CRUD + types/notificators)
     │       ├── commands.py        # Phase 5 (saved commands + send)
+    │       ├── drivers.py         # Phase 6 (full CRUD)
+    │       ├── maintenance.py     # Phase 6 (full CRUD + device filter)
+    │       ├── calendars.py       # Phase 6 (full CRUD, base64 iCalendar)
+    │       ├── server.py          # Phase 7 (info + health, require_auth=False bypass)
+    │       ├── statistics.py      # Phase 7
+    │       ├── audit.py           # Phase 7
+    │       ├── orders.py          # Phase 8 (full CRUD)
+    │       ├── stream.py          # Phase 8 (Live Video proxy - see docstring)
     │       └── utils.py           # date/pagination helpers
     ├── erp_tracking/
     │   └── doctype/
@@ -121,15 +163,29 @@ erp_tracking/
     │   ├── tracking_events/              # Phase 4
     │   ├── tracking_geofences/           # Phase 5
     │   ├── tracking_notifications/       # Phase 5 (Manager only)
-    │   └── tracking_commands/            # Phase 5 (Manager only)
+    │   ├── tracking_commands/            # Phase 5 (Manager only)
+    │   ├── tracking_drivers/             # Phase 6
+    │   ├── tracking_maintenance/         # Phase 6
+    │   ├── tracking_calendars/           # Phase 6 (Manager only)
+    │   ├── tracking_server_info/         # Phase 7
+    │   ├── tracking_health/              # Phase 7
+    │   ├── tracking_statistics/          # Phase 7 (Manager only)
+    │   ├── tracking_audit/               # Phase 7 (Manager only)
+    │   ├── tracking_orders/              # Phase 8
+    │   └── tracking_live_video/          # Phase 8
     ├── public/js/
     │   └── erp_tracking.bundle.js        # shared list UI + ReportPage (Sections 37-38)
+    ├── translations/
+    │   └── fr.csv                        # Phase 8 (Section 47)
     └── tests/
         ├── test_traccar_settings.py
         ├── test_devices_groups_users.py
         ├── test_positions_route.py
         ├── test_reports.py
-        └── test_geofences_notifications_commands.py
+        ├── test_geofences_notifications_commands.py
+        ├── test_drivers_maintenance_calendars.py
+        ├── test_server_health_statistics_audit.py
+        └── test_orders_stream.py
 ```
 
 ## Installation
@@ -187,6 +243,21 @@ bench --site <site> run-tests --app erp_tracking \
 
 bench --site <site> run-tests --app erp_tracking \
   --module erp_tracking.tests.test_geofences_notifications_commands
+
+bench --site <site> run-tests --app erp_tracking \
+  --module erp_tracking.tests.test_drivers_maintenance_calendars
+
+bench --site <site> run-tests --app erp_tracking \
+  --module erp_tracking.tests.test_server_health_statistics_audit
+
+bench --site <site> run-tests --app erp_tracking \
+  --module erp_tracking.tests.test_orders_stream
+```
+
+Or run the whole suite at once:
+
+```bash
+bench --site <site> run-tests --app erp_tracking
 ```
 
 Phase 1 suite covers: Basic Auth success/failure, API Key success/failure,
@@ -222,6 +293,27 @@ command sending in both its success shapes (200 "sent" and 202 "queued"),
 per-device command-type filtering, and permission checks proving a Guest
 user cannot send a command, create a geofence, or even view the
 notifications list.
+
+Phase 6 suite covers: driver CRUD and device-filter parameter passing,
+maintenance CRUD and device-filter parameter passing, calendar creation
+proving the iCalendar text is correctly base64-encoded before it's sent
+to Traccar, partial calendar updates only sending changed fields, and
+permission checks for all three resources.
+
+Phase 7 suite covers: the `require_auth=False` bypass itself — proving
+`/server` and `/health` succeed with zero credentials configured and send
+no `Authorization` header, while the same client instance calling a normal
+endpoint the standard way still correctly fails locally — plus timezone
+caching (second call doesn't re-hit the network), statistics/audit date
+validation, and permission checks for all four Phase 7 endpoints.
+
+Phase 8 suite covers: Order CRUD and cache invalidation, the HLS playlist
+segment-rewriting logic (segment lines replaced with proxy URLs, comment/
+tag lines untouched), a regression test proving the playlist's
+`application/vnd.apple.mpegurl` content type is parsed as text (not
+corrupted as binary), segment byte-proxying, proof that stream endpoints
+still require normal authentication unlike `/server`/`/health`, and
+permission checks for Orders and Live Video.
 
 ## Verifying inside ERPNext
 
@@ -286,11 +378,74 @@ notifications list.
 18. Log in as an `ERP Tracking User` (not Manager) and confirm
     `/app/erp-tracking-commands` and `/app/erp-tracking-notifications` both
     403 — those pages are Manager-only per Section 40.
+19. Navigate to `/app/erp-tracking-drivers` — create a driver, confirm it
+    appears, edit and delete it.
+20. Navigate to `/app/erp-tracking-maintenance` — create a maintenance item
+    (e.g. name "Oil Change", type `totalDistance`, start 0, period 10000),
+    then use the device filter dropdown and confirm the list narrows (or
+    stays empty, since maintenance items aren't linked to a device until
+    permissions are set up on the Traccar side — that's expected, this
+    filter is a passthrough to Traccar's own `deviceId` query param).
+21. Navigate to `/app/erp-tracking-calendars` (as a Manager) — the New
+    Calendar dialog pre-fills a starter iCalendar template; save it,
+    confirm the list shows a decoded "Schedule Preview" snippet (not a raw
+    base64 blob), then edit and delete it. Log in as an `ERP Tracking User`
+    and confirm `/app/erp-tracking-calendars` 403s.
+22. Navigate to `/app/erp-tracking-server-info` — confirm it loads even
+    for a `Viewer`-only user (this endpoint doesn't need write access),
+    and that the Edit button only appears for Managers.
+23. Navigate to `/app/erp-tracking-health` — confirm it shows 🟢 HEALTHY
+    (or 🔴 UNAVAILABLE if your Traccar server is actually down) with a
+    response time in milliseconds, and that it auto-refreshes roughly
+    every 30 seconds without a manual reload.
+24. Navigate to `/app/erp-tracking-statistics` (as a Manager) — generate a
+    report for the last 7 days and confirm both a table and a Chart.js
+    line chart render below the filters.
+25. Navigate to `/app/erp-tracking-audit` (as a Manager) — generate a
+    report for the last 24 hours and confirm actions appear with their
+    user/type/object. Log in as an `ERP Tracking User` and confirm this
+    page 403s (Section 33: the endpoint itself is admin-only per Traccar's
+    own spec description, not just this app's convention).
+26. Navigate to `/app/erp-tracking-orders` — create an order, confirm it
+    appears, edit and delete it.
+27. Navigate to `/app/erp-tracking-live-video` — select a device that has
+    a camera configured on your Traccar server, click **Play**, and
+    confirm video plays. Open browser dev tools → Network tab and confirm
+    every request goes to `/api/method/erp_tracking.api.get_stream_...` on
+    your own ERPNext domain — never directly to your Traccar server, and
+    never carrying an `Authorization` header from the browser.
+28. Open **Devices**, click into a device, and check the **Maintenance**,
+    **Commands**, and **Geofences** tabs — confirm they now show real
+    (possibly empty) data instead of the "later phase" placeholder from
+    earlier deliveries, and that **Commands** stays visibly disabled with
+    a "Manager only" tooltip when viewed as a non-Manager user.
+29. Switch your Desk language to French (User menu → My Settings →
+    Language → Français) and confirm page titles and common labels (e.g.
+    "Véhicules" for Devices, "Positions en temps réel" for Live Positions,
+    "Tester la connexion" for Test Connection) render in French.
 
-## Next phase
+## Project status
 
-Phase 6 (Drivers, Maintenance, Calendars) is the last "resource CRUD"
-phase before Phase 7 moves into server-level concerns (Server Info,
-Health, Statistics, Audit) and Phase 8 wraps up with Live Video, the
-French translation pass, and closing out the full write-permission matrix
-across every DocType/page built so far.
+All 8 phases from the brief's own implementation order (Section 51) are
+complete. Every DocType, page, and whitelisted API method is real,
+syntax-checked code — not pseudo-code — and every feature was checked
+against the supplied OpenAPI spec operation-by-operation before being
+built (Section 50). Two real bugs (binary-response corruption for XLSX in
+Phase 4, and the same class of bug for the HLS playlist's MIME type in
+Phase 8) were caught by the test suite before shipping rather than after.
+
+A handful of deliberate, documented deviations from a literal reading of
+the brief exist because the actual OpenAPI spec doesn't support what the
+brief assumed — each is called out where it happens rather than silently
+worked around:
+- No `GET /events` list endpoint exists; the Events page uses
+  `GET /reports/events` instead (see `config.py`).
+- Report downloads only support `xlsx` and `mail`, not CSV/PDF (see
+  `reports.py`).
+- Maintenance and Orders have no native export endpoint, so no
+  Export button was added for either (Sections 28, 34).
+- The Calendar schema has no separate Schedule/Timezone field — only a
+  base64 `data` blob (see `calendars.py`).
+- Live Video is proxied through ERPNext, not fetched by the browser
+  directly from Traccar, because the alternative would require handing
+  the frontend a session token (see `stream.py`).

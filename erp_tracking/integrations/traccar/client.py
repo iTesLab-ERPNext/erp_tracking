@@ -101,24 +101,42 @@ class TraccarClient:
 		params: dict | None = None,
 		json: dict | None = None,
 		accept: str = "application/json",
+		require_auth: bool = True,
 	) -> dict:
 		"""Perform one Traccar API call and return a standardized response.
 
 		1. Load Traccar Settings (via auth.py, never directly).
-		2. Authenticate / build headers.
+		2. Authenticate / build headers - unless require_auth=False.
 		3. Resolve the endpoint path from the central config map.
 		4. Send the HTTP request with the configured timeout + TLS verification.
 		5. Handle timeouts, connection errors, and HTTP error codes.
 		6. Parse JSON (or return raw text for non-JSON responses like /health).
 		7. Return the standardized response shape. Never raises to the caller.
+
+		require_auth=False is for the two operations the OpenAPI spec marks
+		`security: []` - GET /server and GET /health (see server.py). Every
+		other endpoint keeps the default (True): the spec's global security
+		requirement (BasicAuth or ApiKey) applies to everything else,
+		including PUT /server, /server/geocode, /server/timezones,
+		/statistics, and /audit, none of which override the global default.
 		"""
 		started = time.monotonic()
 		status_code = None
 
 		try:
-			settings = self._auth.authenticate()
-			headers = {"Accept": accept}
-			headers.update(self._auth.get_auth_headers())
+			if require_auth:
+				settings = self._auth.authenticate()
+				headers = {"Accept": accept}
+				headers.update(self._auth.get_auth_headers())
+			else:
+				# Still needs a configured, enabled URL - just skips the
+				# credential requirement these two specific endpoints don't need.
+				settings = self._auth.settings
+				if not settings.url:
+					raise TraccarConfigurationError("Traccar server URL is not configured.")
+				if not settings.enabled:
+					raise TraccarConfigurationError("Traccar integration is disabled.")
+				headers = {"Accept": accept}
 
 			url = f"{settings.url}{build_path(endpoint_key, **(path_params or {}))}"
 
@@ -197,14 +215,19 @@ class TraccarClient:
 			# e.g. 204 No Content (mail-delivery report requests, DELETE endpoints)
 			return None
 
-		if content_type.startswith("text/") or "xml" in content_type:
-			# /health (text/plain), /positions/gpx, /positions/kml (+xml) etc.
+		if content_type.startswith("text/") or "xml" in content_type or "mpegurl" in content_type:
+			# /health (text/plain), /positions/gpx, /positions/kml (+xml),
+			# and the HLS playlist (application/vnd.apple.mpegurl) are all
+			# textual formats despite that last one not living under text/*
+			# or containing "xml" - it still needs response.text, not bytes,
+			# or stream.py's playlist line-rewriting would break.
 			return response.text
 
 		# Binary payloads - native XLSX report/route downloads, device images,
-		# HLS video segments. Returning raw bytes here (not response.text)
-		# matters: decoding a binary spreadsheet or video segment as UTF-8
-		# text would corrupt it before it ever reaches the browser.
+		# HLS video segments (video/mp2t). Returning raw bytes here (not
+		# response.text) matters: decoding a binary spreadsheet or video
+		# segment as UTF-8 text would corrupt it before it ever reaches the
+		# browser.
 		return response.content
 
 	@staticmethod

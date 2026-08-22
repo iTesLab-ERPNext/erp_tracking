@@ -1,0 +1,13 @@
+{
+ "doctype": "Page",
+ "module": "ERP Tracking",
+ "name": "erp-tracking-audit",
+ "page_name": "erp-tracking-audit",
+ "title": "Audit Logs",
+ "standard": "Yes",
+ "system_page": 0,
+ "roles": [
+  {"role": "System Manager"},
+  {"role": "ERP Tracking Manager"}
+ ]
+}

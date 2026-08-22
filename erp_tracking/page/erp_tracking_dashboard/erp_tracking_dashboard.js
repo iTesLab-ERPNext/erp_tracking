@@ -58,6 +58,15 @@ class ERPTrackingDashboard {
 			{ label: __("Geofences"), route: "erp-tracking-geofences" },
 			{ label: __("Notifications"), route: "erp-tracking-notifications" },
 			{ label: __("Commands"), route: "erp-tracking-commands" },
+			{ label: __("Drivers"), route: "erp-tracking-drivers" },
+			{ label: __("Maintenance"), route: "erp-tracking-maintenance" },
+			{ label: __("Calendars"), route: "erp-tracking-calendars" },
+			{ label: __("Server Info"), route: "erp-tracking-server-info" },
+			{ label: __("Health"), route: "erp-tracking-health" },
+			{ label: __("Statistics"), route: "erp-tracking-statistics" },
+			{ label: __("Audit Logs"), route: "erp-tracking-audit" },
+			{ label: __("Orders"), route: "erp-tracking-orders" },
+			{ label: __("Live Camera"), route: "erp-tracking-live-video" },
 		];
 
 		const $actions = this.$body.find(".erp-tracking-quick-actions");
