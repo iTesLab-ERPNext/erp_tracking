@@ -1,0 +1,7 @@
+{
+  "name": "erp_tracking",
+  "version": "0.1.0",
+  "description": "Traccar GPS tracking integration for ERPNext v15",
+  "private": true,
+  "license": "MIT"
+}

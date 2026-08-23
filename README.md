@@ -5,6 +5,29 @@ native Desk app (no separate React frontend).
 
 ## Status: Phase 8 of 8 complete — project delivered
 
+### Third build fix — missing `package.json` (the actual root cause)
+Two earlier fixes (a bad `app_include_js` value, then 20 mismatched page
+folder names) were both real bugs and both necessary — but the
+`TypeError [ERR_INVALID_ARG_TYPE]: paths[0] ... Received undefined` crash
+in `esbuild.js`'s `get_all_files_to_build` kept recurring across multiple
+independent, freshly-created benches (different machines, different Python
+versions) even after both fixes. That consistency pointed at something
+more fundamental: **the app had no `package.json`.**
+
+Every Frappe app — `frappe`, `erpnext`, and every third-party app — ships a
+`package.json` at its repo root, because Frappe's Node/esbuild build
+tooling treats each app as a **Yarn workspace member**. Without one, the
+app is never registered as a workspace, and `get_all_files_to_build` has
+no valid path to resolve for it — exactly the `undefined` this crash
+reports. `pyproject.toml` (Python packaging) was present from Phase 1, but
+the JS-side manifest was simply missing the entire time.
+
+**Fixed**: added a minimal `package.json` at the repo root
+(`name`, `version`, `private: true`, `license`). This is the piece that
+was actually missing all along; the `app_include_js` and page-folder-name
+fixes were real and still necessary, but insufficient on their own without
+this file.
+
 ### Second build fix (critical — affects every page from Phase 2 onward)
 The earlier `hooks.py`/bundle-naming fix was necessary but not sufficient.
 The real, larger cause of the same `esbuild` crash
@@ -162,6 +185,7 @@ app.
 ```
 erp_tracking/
 ├── pyproject.toml
+├── package.json
 ├── license.txt
 ├── README.md
 └── erp_tracking/
