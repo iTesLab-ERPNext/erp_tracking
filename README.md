@@ -5,6 +5,39 @@ native Desk app (no separate React frontend).
 
 ## Status: Phase 8 of 8 complete — project delivered
 
+### Post-delivery addition: full CRUD for Devices, Groups, Users
+The original Phase 2 delivery only wired up list/get (read) for Devices,
+Groups, and Users, even though the spec's `/devices`, `/groups`, and
+`/users` endpoints all support full create/update/delete. Closed that gap:
+- `devices.py` / `groups.py`: `create_*`, `update_*`, `delete_*` added,
+  same read/write role split as Drivers/Geofences (Manager+User write,
+  Viewer read-only)
+- `users.py`: `create_user`/`update_user`/`delete_user` added, but gated
+  **Manager-only** — Users are real Traccar login accounts, not a general
+  fleet resource, so managing them is treated as an administrative action
+  like Notifications/Commands/Calendars. The `password` field is
+  deliberately **write-only**: the edit dialog never pre-fills it from a
+  GET, an empty value on update means "leave unchanged" (not "clear it"),
+  and even if a misconfigured Traccar server echoed a password back on
+  create, `_redact()` strips it before it reaches the browser — covered by
+  a dedicated test.
+- Devices page: "New Device" button, plus an "Edit" button inside the
+  existing details dialog's Overview tab (which already had read-only
+  Positions/Trips/Stops/Events/Maintenance/Commands/Geofences tabs from
+  earlier phases)
+- Groups page: "New Group" button; row click now opens an edit form
+  (Name, Parent Group ID, Attributes) with a "View Devices in Group"
+  button and Delete, replacing the old read-only click-through
+- Users page: "New User" button and row-click-to-edit, both visible only
+  to Managers client-side (server-side `require_admin()` enforces it
+  regardless)
+- All three pages' dashboard shortcuts already existed from Phase 2 — no
+  new links needed, they just now lead to fully functional CRUD instead of
+  read-only lists
+- New test module (`test_devices_groups_users_crud.py`) covering create/
+  update/delete for all three resources, cache invalidation on write, the
+  password write-only behavior specifically, and permission checks
+
 ### Third build fix — missing `package.json` (the actual root cause)
 Two earlier fixes (a bad `app_include_js` value, then 20 mismatched page
 folder names) were both real bugs and both necessary — but the
@@ -120,7 +153,8 @@ send, for Commands):
 |---|---|---|---|---|
 | Traccar Settings, Test Connection | ✅ | ❌ | ❌ | credentials — Manager only |
 | Dashboard | ✅ read | ✅ read | ✅ read | |
-| Devices, Groups, Users | ✅ read/write¹ | ✅ read/write¹ | ✅ read | ¹Devices/Groups/Users have no write endpoints exposed in this app (Traccar itself supports them; not wired here — read-only by design) |
+| Devices, Groups | ✅ read/write | ✅ read/write | ✅ read | full CRUD (create/edit/delete dialogs on each page) |
+| Users | ✅ read/write | ✅ read only | ❌ | write is Manager-only — Users are real Traccar login accounts, not a general fleet resource; password is write-only, never round-tripped back to the browser |
 | Live Positions, Position History, Route | ✅ | ✅ | ✅ | read-only resources |
 | Reports (Trips/Stops/Summary/Events) | ✅ | ✅ | ✅ | read-only; export uses the same read gate |
 | Geofences | ✅ read/write | ✅ read/write | ✅ read | |
@@ -262,6 +296,7 @@ erp_tracking/
     └── tests/
         ├── test_traccar_settings.py
         ├── test_devices_groups_users.py
+        ├── test_devices_groups_users_crud.py
         ├── test_positions_route.py
         ├── test_reports.py
         ├── test_geofences_notifications_commands.py

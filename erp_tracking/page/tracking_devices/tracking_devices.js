@@ -8,9 +8,15 @@ frappe.pages["tracking_devices"].on_page_load = function (wrapper) {
 		single_column: true,
 	});
 
+	const can_write = frappe.user_roles.some((r) => ["System Manager", "ERP Tracking Manager", "ERP Tracking User"].includes(r));
+
+	if (can_write) {
+		page.set_primary_action(__("New Device"), () => show_device_form_dialog(null, () => list.load({ refresh: true })), "fa fa-plus");
+	}
+
 	const $container = $(`<div></div>`).appendTo(page.body);
 
-	new erp_tracking.ListEngine({
+	const list = new erp_tracking.ListEngine({
 		wrapper: $container,
 		method: "erp_tracking.api.get_devices",
 		page_length: 20,
@@ -32,11 +38,112 @@ frappe.pages["tracking_devices"].on_page_load = function (wrapper) {
 				format: (v) => (v ? `<span class="indicator-pill danger">${__("Yes")}</span>` : `<span class="indicator-pill success">${__("No")}</span>`),
 			},
 		],
-		on_row_click: (row) => show_device_details(row),
-	}).load();
+		on_row_click: (row) => show_device_details(row, () => list.load({ refresh: true })),
+	});
+	list.load();
 };
 
-function show_device_details(device) {
+function show_device_form_dialog(device, on_done) {
+	const is_new = !device;
+
+	const dialog = new frappe.ui.Dialog({
+		title: is_new ? __("New Device") : __("Edit Device"),
+		fields: [
+			{ fieldtype: "Data", fieldname: "name", label: __("Name"), reqd: 1 },
+			{ fieldtype: "Data", fieldname: "unique_id", label: __("Unique ID"), reqd: 1 },
+			{ fieldtype: "Column Break" },
+			{ fieldtype: "Data", fieldname: "category", label: __("Category") },
+			{ fieldtype: "Data", fieldname: "model", label: __("Model") },
+			{ fieldtype: "Section Break" },
+			{ fieldtype: "Data", fieldname: "phone", label: __("Phone") },
+			{ fieldtype: "Data", fieldname: "contact", label: __("Contact") },
+			{ fieldtype: "Column Break" },
+			{ fieldtype: "Int", fieldname: "group_id", label: __("Group ID") },
+			{ fieldtype: "Check", fieldname: "disabled", label: __("Disabled") },
+		],
+		primary_action_label: is_new ? __("Create") : __("Save"),
+		primary_action: (values) => {
+			dialog.disable_primary_action();
+			const method = is_new ? "erp_tracking.api.create_device" : "erp_tracking.api.update_device";
+			const args = is_new
+				? {
+						name: values.name,
+						unique_id: values.unique_id,
+						category: values.category,
+						model: values.model,
+						phone: values.phone,
+						contact: values.contact,
+						group_id: values.group_id,
+						disabled: values.disabled,
+				  }
+				: {
+						device_id: device.id,
+						name: values.name,
+						uniqueId: values.unique_id,
+						category: values.category,
+						model: values.model,
+						phone: values.phone,
+						contact: values.contact,
+						groupId: values.group_id,
+						disabled: values.disabled,
+				  };
+
+			frappe.call({
+				method,
+				args,
+				callback: (r) => {
+					const result = r.message || {};
+					if (result.success) {
+						frappe.show_alert({ message: is_new ? __("Device created.") : __("Device updated."), indicator: "green" });
+						dialog.hide();
+						on_done && on_done();
+					} else {
+						frappe.msgprint(result.message || __("Unable to save device."));
+					}
+					dialog.enable_primary_action();
+				},
+				error: () => dialog.enable_primary_action(),
+			});
+		},
+	});
+
+	if (!is_new) {
+		dialog.set_values({
+			name: device.name,
+			unique_id: device.uniqueId,
+			category: device.category,
+			model: device.model,
+			phone: device.phone,
+			contact: device.contact,
+			group_id: device.groupId,
+			disabled: device.disabled,
+		});
+
+		dialog.set_secondary_action_label(__("Delete"));
+		dialog.set_secondary_action(() => {
+			frappe.confirm(__("Delete device {0}? This cannot be undone.", [device.name]), () => {
+				frappe.call({
+					method: "erp_tracking.api.delete_device",
+					args: { device_id: device.id },
+					callback: (r) => {
+						const result = r.message || {};
+						if (result.success) {
+							frappe.show_alert({ message: __("Device deleted."), indicator: "green" });
+							dialog.hide();
+							on_done && on_done();
+						} else {
+							frappe.msgprint(result.message || __("Unable to delete device."));
+						}
+					},
+				});
+			});
+		});
+	}
+
+	dialog.show();
+}
+
+function show_device_details(device, on_done) {
 	const dialog = new frappe.ui.Dialog({
 		title: device.name || __("Device Details"),
 		size: "large",
@@ -49,7 +156,7 @@ function show_device_details(device) {
 	});
 
 	dialog.show();
-	render_tabs(dialog, device);
+	render_tabs(dialog, device, on_done);
 
 	// Fetch the full record (list responses may exclude attributes when
 	// excludeAttributes is used elsewhere; this guarantees the freshest data).
@@ -59,13 +166,14 @@ function show_device_details(device) {
 		callback: (r) => {
 			const result = r.message || {};
 			if (result.success) {
-				render_tabs(dialog, result.data);
+				render_tabs(dialog, result.data, on_done);
 			}
 		},
 	});
 }
 
 const IS_MANAGER = frappe.user_roles.some((r) => ["System Manager", "ERP Tracking Manager"].includes(r));
+const CAN_WRITE_DEVICES = frappe.user_roles.some((r) => ["System Manager", "ERP Tracking Manager", "ERP Tracking User"].includes(r));
 
 const TABS = [
 	{ key: "overview", label: __("Overview"), available: true },
@@ -78,7 +186,7 @@ const TABS = [
 	{ key: "geofences", label: __("Geofences"), available: true },
 ];
 
-function render_tabs(dialog, device) {
+function render_tabs(dialog, device, on_done) {
 	const $wrapper = dialog.fields_dict.device_details_html.$wrapper;
 	const tab_links = TABS.map(
 		(t) => `
@@ -98,7 +206,7 @@ function render_tabs(dialog, device) {
 	const $tabBody = $wrapper.find(".erp-tracking-device-tab-body");
 
 	const render_current = (tab_key) => {
-		if (tab_key === "overview") return render_overview($tabBody, device);
+		if (tab_key === "overview") return render_overview($tabBody, device, dialog, on_done);
 		if (tab_key === "positions") return render_device_positions($tabBody, device);
 		if (tab_key === "trips") return render_device_report($tabBody, device, "trips");
 		if (tab_key === "stops") return render_device_report($tabBody, device, "stops");
@@ -120,7 +228,7 @@ function render_tabs(dialog, device) {
 	render_current("overview");
 }
 
-function render_overview($wrapper, device) {
+function render_overview($wrapper, device, dialog, on_done) {
 	const rows = [
 		[__("Device Name"), device.name],
 		[__("Unique ID"), device.uniqueId],
@@ -136,7 +244,18 @@ function render_overview($wrapper, device) {
 		.map(([label, value]) => `<tr><th style="width:160px;">${label}</th><td>${value}</td></tr>`)
 		.join("");
 
-	$wrapper.html(`<table class="table table-bordered">${table_rows}</table>`);
+	const edit_button = CAN_WRITE_DEVICES
+		? `<button class="btn btn-default btn-sm erp-tracking-edit-device mb-2"><i class="fa fa-edit"></i> ${__("Edit")}</button>`
+		: "";
+
+	$wrapper.html(`${edit_button}<table class="table table-bordered">${table_rows}</table>`);
+
+	$wrapper.find(".erp-tracking-edit-device").on("click", () => {
+		show_device_form_dialog(device, () => {
+			dialog.hide();
+			on_done && on_done();
+		});
+	});
 }
 
 function render_device_positions($wrapper, device) {

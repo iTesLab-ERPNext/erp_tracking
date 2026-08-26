@@ -53,6 +53,50 @@ def get_device(device_id: int) -> dict:
 	return TraccarClient().request_safe("GET", "device", path_params={"id": device_id})
 
 
+def _invalidate_cache():
+	frappe.cache().delete_keys("erp_tracking:devices:")
+
+
+def create_device(name: str, unique_id: str, category: str | None = None, model: str | None = None, phone: str | None = None, contact: str | None = None, group_id: int | None = None, disabled: bool = False, attributes: dict | None = None) -> dict:
+	"""POST /devices. The spec's Device schema requires name + uniqueId;
+	everything else here is optional, matching the fields Section 10's
+	table actually displays.
+	"""
+	payload = {"name": name, "uniqueId": unique_id, "disabled": bool(disabled)}
+	if category:
+		payload["category"] = category
+	if model:
+		payload["model"] = model
+	if phone:
+		payload["phone"] = phone
+	if contact:
+		payload["contact"] = contact
+	if group_id:
+		payload["groupId"] = int(group_id)
+	if attributes:
+		payload["attributes"] = attributes
+
+	result = TraccarClient().request_safe("POST", "devices", json=payload)
+	if result["success"]:
+		_invalidate_cache()
+	return result
+
+
+def update_device(device_id: int, **fields) -> dict:
+	payload = {"id": int(device_id), **fields}
+	result = TraccarClient().request_safe("PUT", "device", path_params={"id": device_id}, json=payload)
+	if result["success"]:
+		_invalidate_cache()
+	return result
+
+
+def delete_device(device_id: int) -> dict:
+	result = TraccarClient().request_safe("DELETE", "device", path_params={"id": device_id})
+	if result["success"]:
+		_invalidate_cache()
+	return result
+
+
 def count_devices() -> dict:
 	"""Helper for the Dashboard (Section 36): total/online/offline counts.
 

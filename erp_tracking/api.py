@@ -88,6 +88,35 @@ def get_device(device_id: int):
 	return devices_module.get_device(frappe.utils.cint(device_id))
 
 
+@frappe.whitelist()
+def create_device(name: str, unique_id: str, category=None, model=None, phone=None, contact=None, group_id=None, disabled=False, attributes=None):
+	require_write()
+	return devices_module.create_device(
+		name=name,
+		unique_id=unique_id,
+		category=category,
+		model=model,
+		phone=phone,
+		contact=contact,
+		group_id=frappe.utils.cint(group_id) or None,
+		disabled=frappe.utils.sbool(disabled),
+		attributes=_parse_list_arg(attributes),
+	)
+
+
+@frappe.whitelist()
+def update_device(device_id: int, **fields):
+	require_write()
+	fields.pop("cmd", None)
+	return devices_module.update_device(frappe.utils.cint(device_id), **fields)
+
+
+@frappe.whitelist()
+def delete_device(device_id: int):
+	require_write()
+	return devices_module.delete_device(frappe.utils.cint(device_id))
+
+
 # -----------------------------------------------------------------------------
 # Groups (Section 12)
 # -----------------------------------------------------------------------------
@@ -114,8 +143,30 @@ def get_devices_in_group(group_id: int):
 	return groups_module.devices_in_group(frappe.utils.cint(group_id))
 
 
+@frappe.whitelist()
+def create_group(name: str, group_id=None, attributes=None):
+	require_write()
+	return groups_module.create_group(name=name, group_id=frappe.utils.cint(group_id) or None, attributes=_parse_list_arg(attributes))
+
+
+@frappe.whitelist()
+def update_group(group_id: int, **fields):
+	require_write()
+	fields.pop("cmd", None)
+	return groups_module.update_group(frappe.utils.cint(group_id), **fields)
+
+
+@frappe.whitelist()
+def delete_group(group_id: int):
+	require_write()
+	return groups_module.delete_group(frappe.utils.cint(group_id))
+
+
 # -----------------------------------------------------------------------------
-# Users (Section 13)
+# Users (Section 13) - CRUD is Manager-only: unlike Devices/Groups (fleet
+# resources), Users are actual Traccar login accounts, so creating/editing/
+# deleting one is treated as an administrative action (Section 41: handled
+# with the same care as Notifications/Commands/Calendars).
 # -----------------------------------------------------------------------------
 @frappe.whitelist()
 def get_users(keyword: str | None = None, limit: int | None = None, offset: int | None = None, refresh: bool = False):
@@ -132,6 +183,33 @@ def get_users(keyword: str | None = None, limit: int | None = None, offset: int 
 def get_user(user_id: int):
 	require_read()
 	return users_module.get_user(frappe.utils.cint(user_id))
+
+
+@frappe.whitelist()
+def create_user(name: str, email: str, password: str, administrator=False, disabled=False, phone=None, device_limit=None):
+	require_admin()
+	return users_module.create_user(
+		name=name,
+		email=email,
+		password=password,
+		administrator=frappe.utils.sbool(administrator),
+		disabled=frappe.utils.sbool(disabled),
+		phone=phone,
+		device_limit=frappe.utils.cint(device_limit) if device_limit not in (None, "") else None,
+	)
+
+
+@frappe.whitelist()
+def update_user(user_id: int, password=None, **fields):
+	require_admin()
+	fields.pop("cmd", None)
+	return users_module.update_user(frappe.utils.cint(user_id), password=password or None, **fields)
+
+
+@frappe.whitelist()
+def delete_user(user_id: int):
+	require_admin()
+	return users_module.delete_user(frappe.utils.cint(user_id))
 
 
 # -----------------------------------------------------------------------------

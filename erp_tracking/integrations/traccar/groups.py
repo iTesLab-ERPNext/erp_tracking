@@ -36,6 +36,41 @@ def get_group(group_id: int) -> dict:
 	return TraccarClient().request_safe("GET", "group", path_params={"id": group_id})
 
 
+def _invalidate_cache():
+	frappe.cache().delete_keys("erp_tracking:groups:")
+
+
+def create_group(name: str, group_id: int | None = None, attributes: dict | None = None) -> dict:
+	"""POST /groups. `group_id` here is the *parent* group (the Group
+	schema's own `groupId` field for nested grouping), not this group's id.
+	"""
+	payload = {"name": name}
+	if group_id:
+		payload["groupId"] = int(group_id)
+	if attributes:
+		payload["attributes"] = attributes
+
+	result = TraccarClient().request_safe("POST", "groups", json=payload)
+	if result["success"]:
+		_invalidate_cache()
+	return result
+
+
+def update_group(group_id: int, **fields) -> dict:
+	payload = {"id": int(group_id), **fields}
+	result = TraccarClient().request_safe("PUT", "group", path_params={"id": group_id}, json=payload)
+	if result["success"]:
+		_invalidate_cache()
+	return result
+
+
+def delete_group(group_id: int) -> dict:
+	result = TraccarClient().request_safe("DELETE", "group", path_params={"id": group_id})
+	if result["success"]:
+		_invalidate_cache()
+	return result
+
+
 def count_groups() -> dict:
 	result = get_groups()
 	if not result["success"]:
