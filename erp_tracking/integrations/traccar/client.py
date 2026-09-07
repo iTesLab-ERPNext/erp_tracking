@@ -1,249 +1,191 @@
-"""Central HTTP client for the Traccar REST API.
-
-Every feature module (devices.py, positions.py, reports.py, commands.py,
-...) built in later phases talks to Traccar exclusively through
-TraccarClient. This is what Section 7 of the brief calls for: one place
-that owns settings loading, authentication, headers, timeouts, error
-handling, JSON parsing, and response shape - so nothing gets duplicated
-or drifts between modules.
-"""
-
-from __future__ import annotations
+"""The one HTTP client every Traccar call in this app goes through."""
 
 import time
 
 import frappe
 import requests
+from frappe import _
+from frappe.utils import cint, cstr
 
-from .auth import TraccarAuth
-from .config import TraccarSettingsData, build_path, get_settings
-from .exceptions import (
+from erp_tracking.integrations.traccar.auth import TraccarAuth, get_settings
+from erp_tracking.integrations.traccar.exceptions import (
 	TraccarAPIError,
 	TraccarAuthenticationError,
 	TraccarConfigurationError,
 	TraccarConnectionError,
+	TraccarNotFoundError,
+	TraccarPermissionError,
+	TraccarRateLimitError,
 	TraccarTimeoutError,
-	status_message,
 )
+from erp_tracking.integrations.traccar.utils import redact, validate_path
 
-# Fields that must never appear in logs or be echoed back to the client,
-# even accidentally via a raised exception or a debug log line.
-_SENSITIVE_KEYS = {"password", "api_key", "token", "authorization"}
+STATUS_MESSAGES = {
+	400: "Traccar rejected the request.",
+	401: "Authentication failed.",
+	403: "You do not have permission to access this resource.",
+	404: "The requested Traccar record was not found.",
+	408: "Request timeout.",
+	429: "Too many requests to the Traccar server. Please retry shortly.",
+	500: "Traccar server error.",
+	502: "Traccar server unavailable.",
+	503: "Traccar server unavailable.",
+	504: "Traccar server timed out.",
+}
 
-
-def _standard_response(
-	success: bool,
-	data=None,
-	message: str = "",
-	status_code: int | None = None,
-	error: str | None = None,
-) -> dict:
-	"""Shape every response the same way (Section 8)."""
-	return {
-		"success": success,
-		"data": data,
-		"message": message,
-		"status_code": status_code,
-		"error": error,
-	}
-
-
-def _scrub(value):
-	"""Best-effort redaction before anything touches frappe.logger()."""
-	if isinstance(value, dict):
-		return {
-			k: ("***" if k.lower() in _SENSITIVE_KEYS else _scrub(v))
-			for k, v in value.items()
-		}
-	if isinstance(value, list):
-		return [_scrub(v) for v in value]
-	return value
+STATUS_EXCEPTIONS = {
+	401: TraccarAuthenticationError,
+	403: TraccarPermissionError,
+	404: TraccarNotFoundError,
+	408: TraccarTimeoutError,
+	429: TraccarRateLimitError,
+	502: TraccarConnectionError,
+	503: TraccarConnectionError,
+	504: TraccarTimeoutError,
+}
 
 
 class TraccarClient:
-	"""Thin, safe wrapper around `requests` for the Traccar REST API.
+	"""Thin, defensive wrapper around ``requests`` for the Traccar REST API."""
 
-	Usage (from any feature module, in later phases):
+	def __init__(self, settings=None, require_enabled=True):
+		self.settings = settings or get_settings()
+		if require_enabled and not cint(self.settings.enabled):
+			raise TraccarConfigurationError(_("The Traccar integration is disabled."))
 
-		client = TraccarClient()
-		result = client.get("devices")               # by endpoint key
-		result = client.get("device", path_params={"id": 42})
+		self.auth = TraccarAuth(self.settings)
+		self.auth.validate_configuration()
 
-	`result` is always the standardized dict from _standard_response();
-	callers never see a raw requests.Response or a raw exception, so every
-	page in the app can render errors the same way.
-	"""
+		self.base_url = cstr(self.settings.traccar_url).rstrip("/")
+		self.timeout = cint(self.settings.timeout) or 30
+		self.verify_ssl = bool(cint(self.settings.verify_ssl))
+		self.logger = frappe.logger("erp_tracking", allow_site=True)
 
-	def __init__(self, settings: TraccarSettingsData | None = None):
-		self._auth = TraccarAuth(settings)
+	# -- public verbs ----------------------------------------------------
+	def get(self, endpoint, params=None, **kwargs):
+		return self.request("GET", endpoint, params=params, **kwargs)
 
-	# -- public HTTP verbs ---------------------------------------------------
+	def post(self, endpoint, json_body=None, params=None, data=None, **kwargs):
+		return self.request("POST", endpoint, params=params, json_body=json_body, data=data, **kwargs)
 
-	def get(self, endpoint_key: str, path_params: dict | None = None, params: dict | None = None, **kwargs) -> dict:
-		return self.request("GET", endpoint_key, path_params=path_params, params=params, **kwargs)
+	def put(self, endpoint, json_body=None, params=None, **kwargs):
+		return self.request("PUT", endpoint, params=params, json_body=json_body, **kwargs)
 
-	def post(self, endpoint_key: str, path_params: dict | None = None, json: dict | None = None, params: dict | None = None, **kwargs) -> dict:
-		return self.request("POST", endpoint_key, path_params=path_params, json=json, params=params, **kwargs)
+	def delete(self, endpoint, params=None, json_body=None, **kwargs):
+		return self.request("DELETE", endpoint, params=params, json_body=json_body, **kwargs)
 
-	def put(self, endpoint_key: str, path_params: dict | None = None, json: dict | None = None, params: dict | None = None, **kwargs) -> dict:
-		return self.request("PUT", endpoint_key, path_params=path_params, json=json, params=params, **kwargs)
-
-	def delete(self, endpoint_key: str, path_params: dict | None = None, params: dict | None = None, **kwargs) -> dict:
-		return self.request("DELETE", endpoint_key, path_params=path_params, params=params, **kwargs)
-
-	# -- core request path ----------------------------------------------------
-
+	# -- core ------------------------------------------------------------
 	def request(
 		self,
-		method: str,
-		endpoint_key: str,
-		path_params: dict | None = None,
-		params: dict | None = None,
-		json: dict | None = None,
-		accept: str = "application/json",
-		require_auth: bool = True,
-	) -> dict:
-		"""Perform one Traccar API call and return a standardized response.
+		method,
+		endpoint,
+		params=None,
+		json_body=None,
+		data=None,
+		accept="application/json",
+		raw=False,
+		authenticate=True,
+	):
+		"""Execute one Traccar request.
 
-		1. Load Traccar Settings (via auth.py, never directly).
-		2. Authenticate / build headers - unless require_auth=False.
-		3. Resolve the endpoint path from the central config map.
-		4. Send the HTTP request with the configured timeout + TLS verification.
-		5. Handle timeouts, connection errors, and HTTP error codes.
-		6. Parse JSON (or return raw text for non-JSON responses like /health).
-		7. Return the standardized response shape. Never raises to the caller.
-
-		require_auth=False is for the two operations the OpenAPI spec marks
-		`security: []` - GET /server and GET /health (see server.py). Every
-		other endpoint keeps the default (True): the spec's global security
-		requirement (BasicAuth or ApiKey) applies to everything else,
-		including PUT /server, /server/geocode, /server/timezones,
-		/statistics, and /audit, none of which override the global default.
+		Returns parsed JSON by default, ``(bytes, content_type)`` when
+		``raw=True``, and ``None`` for 204 responses.
 		"""
+		path = validate_path(endpoint)
+		url = self.base_url + path
+
+		headers = {"Accept": accept}
+		if authenticate:
+			headers.update(self.auth.get_auth_headers())
+
 		started = time.monotonic()
 		status_code = None
-
 		try:
-			if require_auth:
-				settings = self._auth.authenticate()
-				headers = {"Accept": accept}
-				headers.update(self._auth.get_auth_headers())
-			else:
-				# Still needs a configured, enabled URL - just skips the
-				# credential requirement these two specific endpoints don't need.
-				settings = self._auth.settings
-				if not settings.url:
-					raise TraccarConfigurationError("Traccar server URL is not configured.")
-				if not settings.enabled:
-					raise TraccarConfigurationError("Traccar integration is disabled.")
-				headers = {"Accept": accept}
-
-			url = f"{settings.url}{build_path(endpoint_key, **(path_params or {}))}"
-
 			response = requests.request(
-				method=method,
-				url=url,
+				method,
+				url,
+				params=self._clean_params(params),
+				json=json_body,
+				data=data,
 				headers=headers,
-				params=params,
-				json=json,
-				timeout=settings.timeout,
-				verify=settings.verify_ssl,
+				timeout=self.timeout,
+				verify=self.verify_ssl,
 			)
 			status_code = response.status_code
-
-			if status_code == 401 or status_code == 403:
-				raise TraccarAuthenticationError(status_message(status_code), status_code)
-
-			if status_code >= 400:
-				raise TraccarAPIError(status_message(status_code), status_code)
-
-			data = self._parse_body(response)
-			return _standard_response(
-				success=True,
-				data=data,
-				message="OK",
-				status_code=status_code,
+		except requests.Timeout as exc:
+			self._log(method, path, 408, started, "TraccarTimeoutError")
+			raise TraccarTimeoutError(detail=redact(str(exc)))
+		except requests.exceptions.SSLError as exc:
+			self._log(method, path, 495, started, "TraccarConnectionError")
+			raise TraccarConnectionError(
+				_("TLS verification against the Traccar server failed."), 495, redact(str(exc))
 			)
+		except requests.RequestException as exc:
+			self._log(method, path, 0, started, "TraccarConnectionError")
+			raise TraccarConnectionError(detail=redact(str(exc)))
 
-		except requests.exceptions.Timeout:
-			self._log("timeout", endpoint_key, method, status_code, started)
-			raise TraccarTimeoutError("Request timeout.", 408)
+		self._log(method, path, status_code, started)
+		self._raise_for_status(response)
 
-		except requests.exceptions.ConnectionError:
-			self._log("connection_error", endpoint_key, method, status_code, started)
-			raise TraccarConnectionError("Traccar server unavailable.", 503)
+		if raw:
+			return response.content, response.headers.get("Content-Type", "application/octet-stream")
 
-		except (TraccarAuthenticationError, TraccarAPIError, TraccarConfigurationError):
-			self._log("api_error", endpoint_key, method, status_code, started)
-			raise
-
-	def request_safe(self, *args, **kwargs) -> dict:
-		"""Same as request(), but catches TraccarError and returns the
-		standardized error shape instead of raising. Whitelisted Frappe
-		methods that should never 500 out to the client call this instead
-		of request().
-		"""
-		try:
-			return self.request(*args, **kwargs)
-		except (
-			TraccarConfigurationError,
-			TraccarConnectionError,
-			TraccarTimeoutError,
-			TraccarAuthenticationError,
-			TraccarAPIError,
-		) as exc:
-			return _standard_response(
-				success=False,
-				data=None,
-				message=exc.message,
-				status_code=exc.status_code,
-				error=type(exc).__name__,
-			)
-
-	# -- helpers ---------------------------------------------------------------
-
-	@staticmethod
-	def _parse_body(response: "requests.Response"):
-		content_type = response.headers.get("Content-Type", "")
-
-		if "application/json" in content_type:
-			if not response.content:
-				return None
-			return response.json()
-
-		if not response.content:
-			# e.g. 204 No Content (mail-delivery report requests, DELETE endpoints)
+		if response.status_code == 204 or not response.content:
 			return None
 
-		if content_type.startswith("text/") or "xml" in content_type or "mpegurl" in content_type:
-			# /health (text/plain), /positions/gpx, /positions/kml (+xml),
-			# and the HLS playlist (application/vnd.apple.mpegurl) are all
-			# textual formats despite that last one not living under text/*
-			# or containing "xml" - it still needs response.text, not bytes,
-			# or stream.py's playlist line-rewriting would break.
+		if accept.startswith("text/") or "json" not in (response.headers.get("Content-Type") or "json"):
 			return response.text
 
-		# Binary payloads - native XLSX report/route downloads, device images,
-		# HLS video segments (video/mp2t). Returning raw bytes here (not
-		# response.text) matters: decoding a binary spreadsheet or video
-		# segment as UTF-8 text would corrupt it before it ever reaches the
-		# browser.
-		return response.content
+		try:
+			return response.json()
+		except ValueError:
+			return response.text
 
-	@staticmethod
-	def _log(event: str, endpoint_key: str, method: str, status_code, started: float):
-		"""Structured logging per Section 43 - never logs secrets, only
-		metadata: endpoint, method, status, and execution time.
-		"""
-		elapsed_ms = round((time.monotonic() - started) * 1000, 1)
-		frappe.logger("erp_tracking.traccar").info(
-			_scrub(
-				{
-					"event": event,
-					"endpoint": endpoint_key,
-					"method": method,
-					"status_code": status_code,
-					"elapsed_ms": elapsed_ms,
-				}
-			)
+	def request_raw(self, method, endpoint, params=None, accept="*/*", json_body=None):
+		return self.request(
+			method, endpoint, params=params, json_body=json_body, accept=accept, raw=True
 		)
+
+	# -- helpers ---------------------------------------------------------
+	@staticmethod
+	def _clean_params(params):
+		"""Drop empty values; expand lists into repeated query parameters."""
+		if not params:
+			return None
+		cleaned = {}
+		for key, value in params.items():
+			if value in (None, "", [], {}):
+				continue
+			cleaned[key] = value
+		return cleaned or None
+
+	def _raise_for_status(self, response):
+		if response.status_code < 400:
+			return
+
+		status = response.status_code
+		message = _(STATUS_MESSAGES.get(status, "Traccar rejected the request."))
+		exception = STATUS_EXCEPTIONS.get(status)
+
+		if exception is None:
+			exception = TraccarConnectionError if status >= 500 else TraccarAPIError
+
+		# Body may echo request data, so it goes to the log only, redacted.
+		raise exception(message, status, redact(response.text))
+
+	def _log(self, method, path, status_code, started, error_type=None):
+		"""Log endpoint, method, status, duration and error type - never secrets."""
+		self.logger.info(
+			{
+				"endpoint": path,
+				"method": method,
+				"status_code": status_code,
+				"duration_ms": int((time.monotonic() - started) * 1000),
+				"error_type": error_type,
+				"user": frappe.session.user,
+			}
+		)
+
+
+def get_client(settings=None, require_enabled=True) -> TraccarClient:
+	return TraccarClient(settings=settings, require_enabled=require_enabled)

@@ -1,97 +1,66 @@
-# Copyright (c) 2026, Your Company and contributors
-# For license information, please see license.txt
-
-from __future__ import annotations
+"""Traccar Settings - the single, server-side home of the integration config."""
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
-
-from erp_tracking.integrations.traccar.auth import TraccarAuth
-from erp_tracking.integrations.traccar.client import TraccarClient
-from erp_tracking.integrations.traccar.exceptions import (
-	TraccarAPIError,
-	TraccarAuthenticationError,
-	TraccarConfigurationError,
-	TraccarConnectionError,
-	TraccarTimeoutError,
-)
+from frappe.utils import cint, cstr
 
 
 class TraccarSettings(Document):
 	def validate(self):
-		if self.auth_type == "Basic Auth" and not (self.username and self.get_password("password", raise_exception=False)):
-			frappe.throw(_("Username and Password are required for Basic Auth."))
-
-		if self.auth_type == "API Key" and not self.get_password("api_key", raise_exception=False):
-			frappe.throw(_("API Key is required for API Key authentication."))
+		self.normalise_url()
+		self.validate_timeout()
+		self.validate_credentials()
+		self.reset_status_on_change()
 
 	def on_update(self):
-		# Credentials may have changed - drop any cached auth state so the
-		# very next request re-reads fresh settings instead of a stale copy.
-		TraccarAuth().clear_session()
+		# Any configuration change invalidates cached payloads and the cached
+		# credential check.
+		from erp_tracking.integrations.traccar.auth import TraccarAuth
+		from erp_tracking.integrations.traccar.utils import clear_cache
 
+		TraccarAuth(self).clear_session()
+		clear_cache()
 
-@frappe.whitelist()
-def test_connection():
-	"""Whitelisted backend method behind the "Test Connection" button.
+	# -- validation ------------------------------------------------------
+	def normalise_url(self):
+		url = cstr(self.traccar_url).strip().rstrip("/")
+		if url and not url.startswith(("http://", "https://")):
+			frappe.throw(_("Traccar API URL must start with http:// or https://"))
+		self.traccar_url = url
 
-	Never returns credentials or tokens - only a boolean/status summary,
-	per Section 6 of the brief. Also persists the outcome onto Traccar
-	Settings (connection_status / last_connection_test / last_error) so the
-	Desk form reflects the last known state without re-testing.
-	"""
-	frappe.only_for("System Manager", "ERP Tracking Manager")
+	def validate_timeout(self):
+		timeout = cint(self.timeout)
+		if not timeout:
+			self.timeout = 30
+		elif timeout < 1 or timeout > 300:
+			frappe.throw(_("Timeout must be between 1 and 300 seconds."))
 
-	settings = frappe.get_single("Traccar Settings")
-	result = {
-		"success": False,
-		"authenticated": False,
-		"status_code": None,
-		"message": "",
-	}
-	status_label = "Invalid Configuration"
+		if cint(self.default_page_length) <= 0:
+			self.default_page_length = 20
+		if cint(self.cache_ttl) < 0:
+			self.cache_ttl = 0
 
-	try:
-		client = TraccarClient()
-		# /server is unauthenticated per the spec (security: []), so a
-		# successful call here only proves the URL is reachable. /session
-		# (GET) is what actually round-trips through auth, so we use that
-		# to prove BOTH connectivity and authentication in one call.
-		response = client.request("GET", "session")
+	def validate_credentials(self):
+		if not cint(self.enabled):
+			return
 
-		result["success"] = True
-		result["authenticated"] = True
-		result["status_code"] = response["status_code"]
-		result["message"] = _("Connection successful")
-		status_label = "Connected"
+		if not self.traccar_url:
+			frappe.throw(_("Set the Traccar API URL before enabling the integration."))
 
-	except TraccarAuthenticationError as exc:
-		result["status_code"] = exc.status_code
-		result["message"] = _("Authentication failed")
-		status_label = "Authentication Failed"
+		if self.auth_type == "API Key":
+			if not self.get_password("api_key", raise_exception=False):
+				frappe.throw(_("Set the API key before enabling the integration."))
+		else:
+			if not self.username or not self.get_password("password", raise_exception=False):
+				frappe.throw(_("Set the username and password before enabling the integration."))
 
-	except TraccarTimeoutError as exc:
-		result["status_code"] = exc.status_code
-		result["message"] = _("Connection timeout")
-		status_label = "Timeout"
+	def reset_status_on_change(self):
+		"""A credential or URL edit invalidates the previous test result."""
+		if self.is_new():
+			return
 
-	except TraccarConnectionError as exc:
-		result["status_code"] = exc.status_code
-		result["message"] = _("Server unavailable")
-		status_label = "Server Unavailable"
-
-	except TraccarConfigurationError as exc:
-		result["message"] = exc.message
-		status_label = "Invalid Configuration"
-
-	except TraccarAPIError as exc:
-		result["status_code"] = exc.status_code
-		result["message"] = exc.message
-		status_label = "Server Unavailable"
-
-	settings.db_set("connection_status", status_label, notify=True)
-	settings.db_set("last_connection_test", frappe.utils.now_datetime(), notify=True)
-	settings.db_set("last_error", "" if result["success"] else result["message"], notify=True)
-
-	return result
+		watched = ("traccar_url", "auth_type", "username", "password", "api_key", "verify_ssl")
+		if any(self.has_value_changed(field) for field in watched):
+			self.connection_status = "Not Tested"
+			self.last_error = None

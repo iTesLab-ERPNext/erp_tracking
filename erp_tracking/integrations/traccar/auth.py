@@ -1,105 +1,170 @@
-"""Centralized authentication for the Traccar integration.
+"""Centralised Traccar authentication.
 
-Every other module (client.py, and every feature module built on top of it
-in later phases) gets its auth headers from TraccarAuth. Nothing else is
-allowed to build a Basic Auth header or an Authorization header itself -
-that keeps the "one place secrets touch HTTP" guarantee from Section 41.
+This is the *only* module in the app that reads credentials.  Neither
+``client.py`` nor any resource module (devices, reports, ...) touches the
+password or API key directly - they all ask :class:`TraccarAuth` for headers.
+
+Supported schemes, both declared in the Traccar OpenAPI ``securitySchemes``:
+
+* ``BasicAuth`` - HTTP Basic with the Traccar user's e-mail and password.
+* ``ApiKey``    - HTTP Bearer with a Traccar API token.
 """
-
-from __future__ import annotations
 
 import base64
 
-from .config import TraccarSettingsData, get_settings
-from .exceptions import TraccarConfigurationError
+import frappe
+import requests
+from frappe import _
+from frappe.utils import cint, cstr
+
+from erp_tracking.integrations.traccar.config import TRACCAR_ENDPOINTS
+from erp_tracking.integrations.traccar.exceptions import (
+	TraccarAuthenticationError,
+	TraccarConfigurationError,
+	TraccarConnectionError,
+	TraccarTimeoutError,
+)
+from erp_tracking.integrations.traccar.utils import cache_key, redact
+
+AUTH_BASIC = "Basic Auth"
+AUTH_API_KEY = "API Key"
+
+SESSION_VALIDATION_TTL = 300  # seconds
+
+
+def get_settings():
+	"""Return the Traccar Settings single doc (server-side only)."""
+	return frappe.get_cached_doc("Traccar Settings")
 
 
 class TraccarAuth:
-	"""Resolves Traccar Settings into request-ready auth headers.
+	def __init__(self, settings=None):
+		self.settings = settings or get_settings()
+		self.auth_type = self.settings.auth_type or AUTH_BASIC
+		self.base_url = cstr(self.settings.traccar_url).rstrip("/")
 
-	Supports both auth schemes defined in the OpenAPI spec's
-	securitySchemes: BasicAuth (http/basic) and ApiKey (http/bearer).
-	"""
+	# -- configuration ---------------------------------------------------
+	def validate_configuration(self):
+		if not self.base_url:
+			raise TraccarConfigurationError(_("Traccar server URL is not set."))
+		if not self.base_url.startswith(("http://", "https://")):
+			raise TraccarConfigurationError(_("Traccar server URL must start with http:// or https://."))
 
-	def __init__(self, settings: TraccarSettingsData | None = None):
-		self._settings = settings
-
-	@property
-	def settings(self) -> TraccarSettingsData:
-		if self._settings is None:
-			self._settings = get_settings()
-		return self._settings
-
-	def authenticate(self) -> TraccarSettingsData:
-		"""Validate that settings are complete enough to attempt a request.
-
-		Does not itself make an HTTP call - client.py does that. This only
-		checks local configuration, so bad config fails fast with a clear
-		TraccarConfigurationError instead of a confusing network error.
-		"""
-		settings = self.settings
-
-		if not settings.url:
-			raise TraccarConfigurationError("Traccar server URL is not configured.")
-
-		if not settings.enabled:
-			raise TraccarConfigurationError("Traccar integration is disabled.")
-
-		if settings.auth_type == "Basic Auth":
-			if not settings.username or not settings.password:
-				raise TraccarConfigurationError(
-					"Basic Auth username/password are not configured."
-				)
-		elif settings.auth_type == "API Key":
-			if not settings.api_key:
-				raise TraccarConfigurationError("API Key is not configured.")
+		if self.auth_type == AUTH_API_KEY:
+			if not self._api_key():
+				raise TraccarConfigurationError(_("Traccar API key is not set."))
 		else:
-			raise TraccarConfigurationError(
-				f"Unsupported authentication type: {settings.auth_type}"
+			if not self.settings.username or not self._password():
+				raise TraccarConfigurationError(_("Traccar username or password is not set."))
+
+	# -- secret access (never leaves this class) -------------------------
+	def _password(self):
+		try:
+			return self.settings.get_password("password", raise_exception=False)
+		except Exception:  # noqa: BLE001
+			return None
+
+	def _api_key(self):
+		try:
+			return self.settings.get_password("api_key", raise_exception=False)
+		except Exception:  # noqa: BLE001
+			return None
+
+	# -- headers ---------------------------------------------------------
+	def get_auth_headers(self) -> dict:
+		"""Build the Authorization header for an outbound Traccar request."""
+		self.validate_configuration()
+
+		if self.auth_type == AUTH_API_KEY:
+			return {"Authorization": f"Bearer {self._api_key()}"}
+
+		raw = f"{cstr(self.settings.username)}:{cstr(self._password())}".encode()
+		return {"Authorization": "Basic " + base64.b64encode(raw).decode()}
+
+	# -- session ---------------------------------------------------------
+	def authenticate(self) -> dict:
+		"""Verify the configured credentials against Traccar.
+
+		Returns the sanitised Traccar user record.  Raises
+		:class:`TraccarAuthenticationError` when the credentials are rejected.
+		"""
+		self.validate_configuration()
+		url = self.base_url + TRACCAR_ENDPOINTS["session"]
+		timeout = cint(self.settings.timeout) or 30
+		verify = bool(cint(self.settings.verify_ssl))
+
+		try:
+			if self.auth_type == AUTH_API_KEY:
+				response = requests.get(
+					url,
+					headers={**self.get_auth_headers(), "Accept": "application/json"},
+					timeout=timeout,
+					verify=verify,
+				)
+			else:
+				# POST /session with form credentials is the documented login call.
+				response = requests.post(
+					url,
+					data={
+						"email": cstr(self.settings.username),
+						"password": cstr(self._password()),
+					},
+					headers={"Accept": "application/json"},
+					timeout=timeout,
+					verify=verify,
+				)
+		except requests.Timeout as exc:
+			raise TraccarTimeoutError(detail=redact(str(exc)))
+		except requests.exceptions.SSLError as exc:
+			raise TraccarConnectionError(
+				_("TLS verification against the Traccar server failed."), 495, redact(str(exc))
+			)
+		except requests.RequestException as exc:
+			raise TraccarConnectionError(detail=redact(str(exc)))
+
+		if response.status_code in (401, 403):
+			raise TraccarAuthenticationError(status_code=response.status_code)
+		if response.status_code >= 500:
+			raise TraccarConnectionError(status_code=response.status_code)
+		if response.status_code >= 400:
+			raise TraccarAuthenticationError(
+				_("Traccar rejected the credentials."), response.status_code, redact(response.text)
 			)
 
-		return settings
-
-	def get_auth_headers(self) -> dict:
-		"""Build the Authorization header for the configured auth type.
-
-		BasicAuth -> "Authorization: Basic <base64(user:pass)>"
-		ApiKey    -> "Authorization: Bearer <token>"  (per securitySchemes.ApiKey: http/bearer)
-		"""
-		settings = self.authenticate()
-
-		if settings.auth_type == "Basic Auth":
-			token = base64.b64encode(
-				f"{settings.username}:{settings.password}".encode("utf-8")
-			).decode("ascii")
-			return {"Authorization": f"Basic {token}"}
-
-		if settings.auth_type == "API Key":
-			return {"Authorization": f"Bearer {settings.api_key}"}
-
-		# Unreachable: authenticate() already rejects unknown auth types.
-		raise TraccarConfigurationError(
-			f"Unsupported authentication type: {settings.auth_type}"
-		)
-
-	def validate_session(self) -> bool:
-		"""Local-only check that current settings look usable.
-
-		Real server-side validation happens via TraccarClient.get('server')
-		against GET /session or GET /server (see client.test_connection).
-		This method exists so callers can cheaply check "is auth even
-		configured" before firing a network request.
-		"""
 		try:
-			self.authenticate()
-			return True
-		except TraccarConfigurationError:
-			return False
+			user = response.json() or {}
+		except ValueError:
+			user = {}
+
+		self._mark_validated()
+		return self.sanitize_user(user)
+
+	def validate_session(self, refresh=False) -> bool:
+		"""Cheap cached credential check used before batches of requests."""
+		key = self._cache_key()
+		if not refresh:
+			cached_state = frappe.cache().get_value(key)
+			if cached_state is not None:
+				return bool(cached_state)
+
+		self.authenticate()
+		return True
 
 	def clear_session(self):
-		"""Drop any cached settings so the next call re-reads from the DB.
+		frappe.cache().delete_value(self._cache_key())
 
-		Called after Traccar Settings is saved, so a changed password/API
-		key takes effect immediately without a bench restart.
-		"""
-		self._settings = None
+	def _mark_validated(self):
+		frappe.cache().set_value(self._cache_key(), 1, expires_in_sec=SESSION_VALIDATION_TTL)
+
+	def _cache_key(self):
+		# Keyed on the settings timestamp so any credential edit invalidates it.
+		return cache_key("auth", self.auth_type, self.settings.modified or "new")
+
+	# -- helpers ---------------------------------------------------------
+	@staticmethod
+	def sanitize_user(user: dict) -> dict:
+		"""Strip anything sensitive before a Traccar user reaches the client."""
+		if not isinstance(user, dict):
+			return {}
+		blocked = {"password", "token", "attributes"}
+		return {k: v for k, v in user.items() if k not in blocked}

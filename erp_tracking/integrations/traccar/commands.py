@@ -1,167 +1,148 @@
-"""Commands feature module (Sections 24-26).
+"""Commands - saved commands, command types and dispatch.
 
-Saved commands (list/get/create/update/delete) mirror /commands CRUD.
-Command types come from /commands/types. Sending a command - either a new
-one-off or a saved command by id - goes through /commands/send.
-
-Section 25 is explicit: "Never allow unauthorized users to send commands.
-Implement strict permission checking." Role enforcement itself lives in
-api.py (require_admin() wraps every write/send call here) - this module
-stays focused on the Traccar request shape, but every mutating function
-here is only ever reached through an admin-gated whitelisted method.
+``POST /commands/send`` answers 200 when the command reached the device and 202
+when Traccar queued it because the device is offline.  Both are surfaced
+distinctly in the UI.
 """
 
-from __future__ import annotations
+from frappe import _
+from frappe.utils import cint, cstr
 
-import frappe
-
-from .client import TraccarClient
-from .utils import paginate_params
-
-REFERENCE_CACHE_TTL_SECONDS = 3600
-
-
-def get_commands(
-	keyword: str | None = None,
-	device_id: int | None = None,
-	group_id: int | None = None,
-	limit: int | None = None,
-	offset: int | None = None,
-	refresh: bool = False,
-) -> dict:
-	cache_key = f"erp_tracking:commands:{keyword}:{device_id}:{group_id}:{limit}:{offset}"
-	if not refresh:
-		cached = frappe.cache().get_value(cache_key)
-		if cached is not None:
-			return cached
-
-	params = paginate_params(limit, offset)
-	if keyword:
-		params["keyword"] = keyword
-	if device_id:
-		params["deviceId"] = int(device_id)
-	if group_id:
-		params["groupId"] = int(group_id)
-
-	result = TraccarClient().request_safe("GET", "commands", params=params)
-	if result["success"]:
-		frappe.cache().set_value(cache_key, result, expires_in_sec=60)
-	return result
+from erp_tracking.integrations.traccar.client import get_client
+from erp_tracking.integrations.traccar.config import TRACCAR_ENDPOINTS
+from erp_tracking.integrations.traccar.listing import fetch_list
+from erp_tracking.integrations.traccar.utils import (
+	cached,
+	parse_bool,
+	require,
+	standard_response,
+	stringify_attributes,
+)
 
 
-def get_command(command_id: int) -> dict:
-	return TraccarClient().request_safe("GET", "command", path_params={"id": command_id})
+@standard_response
+def list_commands(filters=None, refresh=False):
+	return fetch_list("commands", filters=filters, refresh=refresh)
 
 
-def get_command_types(device_id: int | None = None, text_channel: bool | None = None, refresh: bool = False) -> dict:
-	"""GET /commands/types - available command types, optionally scoped to
-	a device (Section 26: "Support device-specific command types where
-	provided by the API").
-	"""
-	cache_key = f"erp_tracking:command_types:{device_id}:{text_channel}"
-	if not refresh:
-		cached = frappe.cache().get_value(cache_key)
-		if cached is not None:
-			return cached
+@standard_response
+def get_command(command_id):
+	command_id = cint(require(command_id, "Command"))
+	return get_client().get(TRACCAR_ENDPOINTS["command"].format(id=command_id))
 
+
+@standard_response
+def create_command(payload):
+	return get_client().post(TRACCAR_ENDPOINTS["commands"], json_body=payload)
+
+
+@standard_response
+def update_command(command_id, payload):
+	command_id = cint(require(command_id, "Command"))
+	payload = dict(payload or {})
+	payload["id"] = command_id
+	return get_client().put(TRACCAR_ENDPOINTS["command"].format(id=command_id), json_body=payload)
+
+
+@standard_response
+def delete_command(command_id):
+	command_id = cint(require(command_id, "Command"))
+	get_client().delete(TRACCAR_ENDPOINTS["command"].format(id=command_id))
+	return {"deleted": command_id}
+
+
+@standard_response
+def get_command_types(device_id=None, text_channel=False, refresh=False):
+	"""GET /commands/types - device specific when ``deviceId`` is supplied."""
 	params = {}
 	if device_id:
-		params["deviceId"] = int(device_id)
-	if text_channel is not None:
-		params["textChannel"] = bool(text_channel)
+		params["deviceId"] = cint(device_id)
+	if parse_bool(text_channel):
+		params["textChannel"] = "true"
 
-	result = TraccarClient().request_safe("GET", "commands_types", params=params)
-	if result["success"]:
-		frappe.cache().set_value(cache_key, result, expires_in_sec=REFERENCE_CACHE_TTL_SECONDS)
-	return result
+	def _call():
+		return get_client().get(TRACCAR_ENDPOINTS["command_types"], params) or []
+
+	types = cached(("command_types", params.get("deviceId"), params.get("textChannel")), 600, _call, refresh)
+	return [{"type": t.get("type"), "label": _(cstr(t.get("type")))} for t in types or []]
 
 
-def get_available_commands_for_device(device_id: int) -> dict:
-	"""GET /commands/send?deviceId= - saved commands actually supported by
-	this device's protocol right now (Section 24: "Saved commands").
+@standard_response
+def get_device_saved_commands(device_id):
+	"""GET /commands/send - saved commands the device's protocol supports."""
+	device_id = cint(require(device_id, "Device"))
+	rows = get_client().get(TRACCAR_ENDPOINTS["command_send"], {"deviceId": device_id}) or []
+	return stringify_attributes(rows)
+
+
+def send(device_id=None, command_type=None, attributes=None, saved_command_id=None, text_channel=False, group_id=None):
+	"""POST /commands/send.
+
+	Either ``saved_command_id`` (Traccar re-uses the stored command) or
+	``command_type`` must be given.
 	"""
-	return TraccarClient().request_safe("GET", "commands_send", params={"deviceId": int(device_id)})
-
-
-def _invalidate_cache():
-	frappe.cache().delete_keys("erp_tracking:commands:")
-
-
-def create_saved_command(device_id: int | None, description: str, type_: str, text_channel: bool = False, attributes: dict | None = None) -> dict:
-	payload = {"description": description, "type": type_, "textChannel": bool(text_channel)}
-	if device_id:
-		payload["deviceId"] = int(device_id)
-	if attributes:
-		payload["attributes"] = attributes
-
-	result = TraccarClient().request_safe("POST", "commands", json=payload)
-	if result["success"]:
-		_invalidate_cache()
-	return result
-
-
-def update_saved_command(command_id: int, **fields) -> dict:
-	payload = {"id": int(command_id), **fields}
-	result = TraccarClient().request_safe("PUT", "command", path_params={"id": command_id}, json=payload)
-	if result["success"]:
-		_invalidate_cache()
-	return result
-
-
-def delete_saved_command(command_id: int) -> dict:
-	result = TraccarClient().request_safe("DELETE", "command", path_params={"id": command_id})
-	if result["success"]:
-		_invalidate_cache()
-	return result
-
-
-def send_command(
-	device_id: int | None = None,
-	group_id: int | None = None,
-	saved_command_id: int | None = None,
-	type_: str | None = None,
-	text_channel: bool = False,
-	attributes: dict | None = None,
-) -> dict:
-	"""POST /commands/send - Section 25.
-
-	Either dispatch a saved command (pass saved_command_id, which becomes
-	body.id per the spec: "Dispatch a new command or Saved Command if
-	body.id set") or a one-off command (pass device_id + type_). group_id
-	sends to every device in the group, per the spec's groupId query param.
-
-	Returns success=True with status_code 200 ("Command sent") or 202
-	("Command queued") - both are success outcomes, distinguished by
-	status_code so the UI can show the right message (Section 25).
-	"""
-	if not saved_command_id and not type_:
-		return _client_error("Either a saved command or a command type is required.")
-	if not device_id and not group_id and not saved_command_id:
-		return _client_error("A device or group is required to send a command.")
-
-	payload = {}
+	body = {}
 	if saved_command_id:
-		payload["id"] = int(saved_command_id)
+		body["id"] = cint(saved_command_id)
+	else:
+		body["type"] = cstr(require(command_type, "Command Type"))
+
 	if device_id:
-		payload["deviceId"] = int(device_id)
-	if type_:
-		payload["type"] = type_
-	payload["textChannel"] = bool(text_channel)
+		body["deviceId"] = cint(device_id)
+	if parse_bool(text_channel):
+		body["textChannel"] = True
 	if attributes:
-		payload["attributes"] = attributes
+		body["attributes"] = attributes
 
-	params = {}
-	if group_id:
-		params["groupId"] = int(group_id)
+	if not body.get("deviceId") and not group_id:
+		from erp_tracking.integrations.traccar.exceptions import TraccarAPIError
 
-	return TraccarClient().request_safe("POST", "commands_send", params=params, json=payload)
+		raise TraccarAPIError(_("Select a device or a group."), 400)
 
+	params = {"groupId": cint(group_id)} if group_id else None
+	client = get_client()
 
-def _client_error(message: str) -> dict:
+	# The client returns the parsed body; 202 is distinguished by Traccar
+	# returning a QueuedCommand payload, so the raw status is needed here.
+	import time
+
+	import requests
+
+	started = time.monotonic()
+	url = client.base_url + TRACCAR_ENDPOINTS["command_send"]
+	headers = {"Accept": "application/json", **client.auth.get_auth_headers()}
+	try:
+		response = requests.post(
+			url, params=params, json=body, headers=headers, timeout=client.timeout, verify=client.verify_ssl
+		)
+	except requests.Timeout as exc:
+		from erp_tracking.integrations.traccar.exceptions import TraccarTimeoutError
+		from erp_tracking.integrations.traccar.utils import redact
+
+		raise TraccarTimeoutError(detail=redact(str(exc)))
+	except requests.RequestException as exc:
+		from erp_tracking.integrations.traccar.exceptions import TraccarConnectionError
+		from erp_tracking.integrations.traccar.utils import redact
+
+		raise TraccarConnectionError(detail=redact(str(exc)))
+
+	client._log("POST", TRACCAR_ENDPOINTS["command_send"], response.status_code, started)
+	client._raise_for_status(response)
+
+	try:
+		payload = response.json()
+	except ValueError:
+		payload = None
+
+	queued = response.status_code == 202
 	return {
-		"success": False,
-		"data": None,
-		"message": message,
-		"status_code": 400,
-		"error": "TraccarClientValidationError",
+		"queued": queued,
+		"status_code": response.status_code,
+		"command": payload,
+		"message": _("Command queued") if queued else _("Command sent"),
 	}
+
+
+@standard_response
+def send_command(**kwargs):
+	return send(**kwargs)

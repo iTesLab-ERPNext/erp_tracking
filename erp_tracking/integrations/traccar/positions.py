@@ -1,143 +1,122 @@
-"""Positions feature module (Sections 14-15).
+"""Positions - live snapshot, history and Traccar's native exports.
 
-Live positions and position history both read from GET /positions - the
-spec is explicit that deviceId requires from/to when used, and that id can
-be used without from/to. This module mirrors that exactly rather than
-inventing a simplified interface.
-
-Native export endpoints (Section 15: "If the API provides native CSV/GPX
-endpoints, use those endpoints instead of rebuilding the format
-unnecessarily") are wired here too: /positions/csv, /positions/kml,
-/positions/gpx. These return binary/text bodies, not JSON, so they go
-through TraccarClient.request() directly with accept set appropriately
-rather than through the JSON-shaped request_safe() helper.
+Specification notes:
+* ``GET /positions`` with no parameters returns the last known position of every
+  device the account can see.
+* ``deviceId`` requires ``from`` and ``to``.
+* There are **no** ``limit``/``offset`` parameters, so history paging happens
+  server-side after the window is fetched.
+* ``/positions/csv``, ``/positions/gpx`` and ``/positions/kml`` are native
+  exports and are used instead of re-encoding the data ourselves.
 """
 
-from __future__ import annotations
+from frappe import _
+from frappe.utils import cint, cstr
 
-import frappe
+from erp_tracking.integrations.traccar.client import get_client
+from erp_tracking.integrations.traccar.config import TRACCAR_ENDPOINTS
+from erp_tracking.integrations.traccar.devices import device_map
+from erp_tracking.integrations.traccar.utils import (
+	paginate,
+	parse_id_list,
+	require,
+	sort_rows,
+	standard_response,
+	stringify_attributes,
+	to_iso,
+)
 
-from .client import TraccarClient
-from .exceptions import TraccarError
-from .utils import to_iso8601
-
-# Live positions change constantly - cache is only long enough to absorb a
-# burst of repeated calls (e.g. a dashboard tile and the list page loading
-# together), matching the policy already used in devices.py.
-LIVE_CACHE_TTL_SECONDS = 10
-
-
-def get_live_positions(device_id: int | None = None, refresh: bool = False) -> dict:
-	"""Last known position for all (or one) of the user's devices.
-
-	Matches GET /positions with no from/to - per the spec this returns the
-	last known positions. deviceId alone (without from/to) is intentionally
-	NOT passed through to Traccar here, since the spec requires from/to
-	whenever deviceId is used; a bare single-device "live" position is
-	obtained by filtering the all-devices response instead, which needs no
-	extra round trip and matches what the demo servers actually return.
-	"""
-	cache_key = f"erp_tracking:positions:live"
-
-	if not refresh:
-		cached = frappe.cache().get_value(cache_key)
-		if cached is not None:
-			result = cached
-		else:
-			result = None
-	else:
-		result = None
-
-	if result is None:
-		result = TraccarClient().request_safe("GET", "positions")
-		if result["success"]:
-			frappe.cache().set_value(cache_key, result, expires_in_sec=LIVE_CACHE_TTL_SECONDS)
-
-	if not result["success"] or device_id is None:
-		return result
-
-	filtered = [p for p in (result["data"] or []) if p.get("deviceId") == int(device_id)]
-	return {**result, "data": filtered}
+NATIVE_POSITION_FORMATS = {
+	"csv": (TRACCAR_ENDPOINTS["positions_csv"], "text/csv", "csv"),
+	"gpx": (TRACCAR_ENDPOINTS["positions_gpx"], "application/gpx+xml", "gpx"),
+	"kml": (TRACCAR_ENDPOINTS["positions_kml"], "application/vnd.google-earth.kml+xml", "kml"),
+}
 
 
-def get_position_history(device_id: int, from_date, to_date) -> dict:
-	"""Position history for one device over a time range.
+def _decorate(rows, devices=None):
+	"""Attach device name / status / group so the desk table can show them."""
+	devices = devices if devices is not None else device_map()
+	for row in rows or []:
+		device = devices.get(cint(row.get("deviceId"))) or {}
+		row["deviceName"] = device.get("name") or device.get("uniqueId") or row.get("deviceId")
+		row["deviceStatus"] = device.get("status")
+		row["groupId"] = device.get("groupId")
+	return stringify_attributes(rows, keys=("attributes", "network", "geofenceIds"))
 
-	Matches GET /positions?deviceId=&from=&to= (Section 15). deviceId is
-	required together with from/to per the spec.
-	"""
-	if not device_id:
-		return _client_error("A device is required to fetch position history.")
-	if not from_date or not to_date:
-		return _client_error("Both From and To dates are required.")
 
+def fetch_latest(device_ids=None, group_id=None, status=None):
+	rows = get_client().get(TRACCAR_ENDPOINTS["positions"]) or []
+	devices = device_map()
+	rows = _decorate(rows, devices)
+
+	device_ids = parse_id_list(device_ids)
+	if device_ids:
+		rows = [r for r in rows if cint(r.get("deviceId")) in device_ids]
+	if group_id:
+		rows = [r for r in rows if cint(r.get("groupId")) == cint(group_id)]
+	if status:
+		rows = [r for r in rows if cstr(r.get("deviceStatus")) == cstr(status)]
+	return rows
+
+
+@standard_response
+def get_latest_positions(device_ids=None, group_id=None, status=None, limit=None, offset=0, sort_by=None, sort_order="asc"):
+	"""Live positions page - one snapshot per device."""
+	rows = fetch_latest(device_ids=device_ids, group_id=group_id, status=status)
+	rows = sort_rows(rows, sort_by or "deviceName", sort_order)
+	return paginate(rows, limit, offset)
+
+
+def fetch_history(device_id, from_time, to_time):
+	device_id = cint(require(device_id, "Device"))
 	params = {
-		"deviceId": int(device_id),
-		"from": to_iso8601(from_date),
-		"to": to_iso8601(to_date),
+		"deviceId": device_id,
+		"from": to_iso(require(from_time, "From Date")),
+		"to": to_iso(require(to_time, "To Date"), end_of_day=True),
 	}
-	return TraccarClient().request_safe("GET", "positions", params=params)
+	rows = get_client().get(TRACCAR_ENDPOINTS["positions"], params) or []
+	return _decorate(rows)
 
 
-def delete_position_range(device_id: int, from_date, to_date) -> dict:
-	"""Delete all positions for a device in a time span - matches DELETE
-	/positions. Manager-only; wired here for completeness of the endpoint
-	but not exposed in the UI in this phase.
-	"""
+@standard_response
+def get_position_history(device_id, from_time, to_time, limit=None, offset=0, sort_by=None, sort_order="asc"):
+	rows = fetch_history(device_id, from_time, to_time)
+	rows = sort_rows(rows, sort_by or "fixTime", sort_order)
+	result = paginate(rows, limit, offset)
+	# The map needs the whole track, not just the current page.
+	result["track"] = [
+		[r.get("latitude"), r.get("longitude")]
+		for r in rows
+		if r.get("latitude") is not None and r.get("longitude") is not None
+	]
+	return result
+
+
+@standard_response
+def get_positions_by_id(position_ids):
+	ids = parse_id_list(position_ids)
+	if not ids:
+		return []
+	return _decorate(get_client().get(TRACCAR_ENDPOINTS["positions"], {"id": ids}) or [])
+
+
+def download_positions(device_id, from_time, to_time, fmt="csv", geofence_id=None):
+	"""Use Traccar's native CSV/GPX/KML exports. Returns ``(bytes, mime, ext)``."""
+	fmt = cstr(fmt).lower()
+	if fmt not in NATIVE_POSITION_FORMATS:
+		from erp_tracking.integrations.traccar.exceptions import TraccarAPIError
+
+		raise TraccarAPIError(_("Unsupported position export format."), 400)
+
+	endpoint, mime, extension = NATIVE_POSITION_FORMATS[fmt]
 	params = {
-		"deviceId": int(device_id),
-		"from": to_iso8601(from_date),
-		"to": to_iso8601(to_date),
+		"deviceId": cint(require(device_id, "Device")),
+		"from": to_iso(require(from_time, "From Date")),
+		"to": to_iso(require(to_time, "To Date"), end_of_day=True),
 	}
-	return TraccarClient().request_safe("DELETE", "positions", params=params)
+	# geofenceId is only documented on /positions/csv
+	if geofence_id and fmt == "csv":
+		params["geofenceId"] = cint(geofence_id)
 
-
-def _export(endpoint_key: str, device_id: int, from_date, to_date, accept: str, geofence_id: int | None = None):
-	"""Shared implementation for the three native export formats.
-
-	Returns the raw response text/bytes plus a suggested filename and
-	content type - callers (whitelisted methods) turn this into a Frappe
-	file download. Never rebuilds these formats client-side (Section 15/39:
-	prefer native export endpoints over regenerating them).
-	"""
-	if not device_id or not from_date or not to_date:
-		raise TraccarError("Device, From, and To are required for export.", 400)
-
-	params = {
-		"deviceId": int(device_id),
-		"from": to_iso8601(from_date),
-		"to": to_iso8601(to_date),
-	}
-	if geofence_id:
-		params["geofenceId"] = int(geofence_id)
-
-	# These formats return non-JSON bodies, so we go through request()
-	# directly (not request_safe) and let the caller (a whitelisted method)
-	# translate a raised TraccarError into a user-facing frappe.throw.
-	client = TraccarClient()
-	result = client.request("GET", endpoint_key, params=params, accept=accept)
-	return result["data"]
-
-
-def export_positions_csv(device_id: int, from_date, to_date) -> str:
-	return _export("positions_csv", device_id, from_date, to_date, accept="text/csv")
-
-
-def export_positions_kml(device_id: int, from_date, to_date) -> str:
-	return _export(
-		"positions_kml", device_id, from_date, to_date, accept="application/vnd.google-earth.kml+xml"
-	)
-
-
-def export_positions_gpx(device_id: int, from_date, to_date) -> str:
-	return _export("positions_gpx", device_id, from_date, to_date, accept="application/gpx+xml")
-
-
-def _client_error(message: str) -> dict:
-	return {
-		"success": False,
-		"data": None,
-		"message": message,
-		"status_code": 400,
-		"error": "TraccarClientValidationError",
-	}
+	content, _content_type = get_client().request_raw("GET", endpoint, params=params, accept=mime)
+	return content, mime, extension

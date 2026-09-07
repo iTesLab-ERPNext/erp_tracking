@@ -1,0 +1,130 @@
+/* ERP Tracking - small additions on top of the native Frappe desk styling. */
+
+.erpt-page {
+	padding: 0 var(--padding-md, 15px) var(--padding-md, 15px);
+}
+
+.erpt-cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+	gap: var(--margin-sm, 10px);
+	margin: var(--margin-md, 15px) 0;
+}
+
+.erpt-card {
+	background: var(--card-bg, #fff);
+	border: 1px solid var(--border-color, #e2e6e9);
+	border-radius: var(--border-radius-md, 6px);
+	padding: 12px 14px;
+}
+
+.erpt-card[data-route] {
+	cursor: pointer;
+}
+
+.erpt-card[data-route]:hover {
+	border-color: #2490ef;
+}
+
+.erpt-card-value {
+	font-size: 22px;
+	font-weight: 600;
+	line-height: 1.2;
+	color: var(--text-color, #1f272e);
+}
+
+.erpt-card-label {
+	font-size: var(--text-sm, 12px);
+	color: var(--text-muted, #6c7680);
+	margin-top: 2px;
+}
+
+.erpt-card.success .erpt-card-value { color: #28a745; }
+.erpt-card.danger .erpt-card-value { color: #e74c3c; }
+.erpt-card.warning .erpt-card-value { color: #f5a623; }
+.erpt-card.primary .erpt-card-value { color: #2490ef; }
+
+.erpt-empty {
+	background: #f8f9fa;
+	border: 1px dashed var(--border-color, #e2e6e9);
+	border-radius: var(--border-radius-md, 6px);
+	padding: 36px 20px;
+	text-align: center;
+}
+
+.erpt-empty-title {
+	font-weight: 600;
+	margin-bottom: 4px;
+}
+
+.erpt-empty-message {
+	color: var(--text-muted, #6c7680);
+	font-size: var(--text-sm, 12px);
+}
+
+.erpt-empty-action {
+	margin-top: 12px;
+}
+
+.erpt-loading {
+	padding: 30px 0;
+	text-align: center;
+}
+
+.erpt-datatable {
+	margin-top: var(--margin-sm, 10px);
+}
+
+.erpt-pagination {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 0;
+}
+
+.erpt-page-info {
+	color: var(--text-muted, #6c7680);
+	font-size: var(--text-sm, 12px);
+}
+
+.erpt-map {
+	height: 460px;
+	border: 1px solid var(--border-color, #e2e6e9);
+	border-radius: var(--border-radius-md, 6px);
+	margin-bottom: var(--margin-md, 15px);
+}
+
+.erpt-split {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: var(--margin-md, 15px);
+}
+
+@media (min-width: 992px) {
+	.erpt-split.with-map {
+		grid-template-columns: 1fr 1fr;
+	}
+}
+
+.erpt-detail-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+	gap: 10px 20px;
+	margin-bottom: var(--margin-md, 15px);
+}
+
+.erpt-detail-label {
+	font-size: var(--text-sm, 12px);
+	color: var(--text-muted, #6c7680);
+}
+
+.erpt-detail-value {
+	font-weight: 500;
+}
+
+.erpt-video {
+	width: 100%;
+	max-height: 520px;
+	background: #000;
+	border-radius: var(--border-radius-md, 6px);
+}

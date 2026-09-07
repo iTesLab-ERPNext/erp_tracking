@@ -1,792 +1,780 @@
-"""Top-level whitelisted API surface for erp_tracking.
+"""The whitelisted surface of ERP Tracking.
 
-Phase 1 only exposes connection status, used by the Dashboard's 🟢/🔴
-Connected indicator (Section 36). Feature-specific whitelisted methods
-(get_devices, get_positions, generate_report, send_command, ...) are added
-here in their respective phases, but each delegates to its own
-integrations/traccar/<feature>.py module rather than talking to
-TraccarClient directly - this file stays a thin router, never business logic.
+This is the only door between the desk and Traccar.  Every method:
+
+1. checks the caller's role through :mod:`erp_tracking.permissions`;
+2. validates and normalises its arguments;
+3. delegates to the integration layer, which returns the standard envelope;
+4. returns data that never contains credentials.
 """
 
-from __future__ import annotations
-
 import frappe
+from frappe import _
+from frappe.utils import cint, cstr, now_datetime
 
-from erp_tracking.integrations.traccar import audit as audit_module
-from erp_tracking.integrations.traccar import calendars as calendars_module
-from erp_tracking.integrations.traccar import commands as commands_module
-from erp_tracking.integrations.traccar import dashboard as dashboard_module
-from erp_tracking.integrations.traccar import devices as devices_module
-from erp_tracking.integrations.traccar import drivers as drivers_module
-from erp_tracking.integrations.traccar import geofences as geofences_module
-from erp_tracking.integrations.traccar import groups as groups_module
-from erp_tracking.integrations.traccar import maintenance as maintenance_module
-from erp_tracking.integrations.traccar import notifications as notifications_module
-from erp_tracking.integrations.traccar import orders as orders_module
-from erp_tracking.integrations.traccar import positions as positions_module
-from erp_tracking.integrations.traccar import reports as reports_module
-from erp_tracking.integrations.traccar import route as route_module
-from erp_tracking.integrations.traccar import server as server_module
-from erp_tracking.integrations.traccar import statistics as statistics_module
-from erp_tracking.integrations.traccar import stream as stream_module
-from erp_tracking.integrations.traccar import users as users_module
-from erp_tracking.integrations.traccar.config import get_settings
-from erp_tracking.integrations.traccar.exceptions import TraccarConfigurationError, TraccarError
-from erp_tracking.integrations.traccar.permissions import require_admin, require_read, require_write
+from erp_tracking import export as export_service
+from erp_tracking.integrations.traccar import (
+	audit,
+	calendars,
+	commands,
+	devices,
+	drivers,
+	events,
+	geofences,
+	groups,
+	listing,
+	maintenance,
+	notifications,
+	orders,
+	positions,
+	reports,
+	server,
+	statistics,
+	stream,
+	users,
+)
+from erp_tracking.integrations.traccar.auth import TraccarAuth, get_settings
+from erp_tracking.integrations.traccar.config import (
+	AUDIT_COLUMNS,
+	LIST_CONFIG,
+	POSITION_COLUMNS,
+	REPORT_CONFIG,
+)
+from erp_tracking.integrations.traccar.exceptions import TraccarError
+from erp_tracking.integrations.traccar.utils import (
+	clear_cache,
+	fail,
+	ok,
+	parse_bool,
+	parse_id_list,
+	parse_json_arg,
+	require,
+	today_window,
+)
+from erp_tracking.permissions import (
+	ROLE_MANAGER,
+	ROLE_USER,
+	ROLE_VIEWER,
+	ensure_admin,
+	ensure_command,
+	ensure_read,
+	ensure_write,
+	is_manager,
+)
+
+# ---------------------------------------------------------------------------
+# Connection and configuration
+# ---------------------------------------------------------------------------
 
 
 @frappe.whitelist()
-def get_connection_status():
-	"""Lightweight, read-only status check for dashboard widgets.
-
-	Does NOT make a network call - it reports the last cached result from
-	Traccar Settings (populated by the Test Connection button). This keeps
-	dashboard loads fast; use test_connection() for an active check.
-	"""
-	settings_doc = frappe.get_single("Traccar Settings")
+def test_connection():
+	"""Verify the stored credentials. Never returns a credential or a token."""
+	ensure_admin()
+	settings = get_settings()
 
 	try:
-		get_settings()
-		configured = True
-	except TraccarConfigurationError:
-		configured = False
-
-	return {
-		"configured": configured,
-		"enabled": bool(settings_doc.enabled),
-		"connection_status": settings_doc.connection_status or "Not Tested",
-		"last_connection_test": settings_doc.last_connection_test,
-	}
-
-
-# -----------------------------------------------------------------------------
-# Dashboard (Section 36)
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_dashboard_summary():
-	require_read()
-	return dashboard_module.get_dashboard_summary()
-
-
-# -----------------------------------------------------------------------------
-# Devices (Section 10-11)
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_devices(keyword: str | None = None, limit: int | None = None, offset: int | None = None, refresh: bool = False):
-	require_read()
-	return devices_module.get_devices(
-		keyword=keyword,
-		limit=frappe.utils.cint(limit) or None,
-		offset=frappe.utils.cint(offset) or None,
-		refresh=frappe.utils.sbool(refresh),
-	)
-
-
-@frappe.whitelist()
-def get_device(device_id: int):
-	require_read()
-	return devices_module.get_device(frappe.utils.cint(device_id))
-
-
-@frappe.whitelist()
-def create_device(name: str, unique_id: str, category=None, model=None, phone=None, contact=None, group_id=None, disabled=False, attributes=None):
-	require_write()
-	return devices_module.create_device(
-		name=name,
-		unique_id=unique_id,
-		category=category,
-		model=model,
-		phone=phone,
-		contact=contact,
-		group_id=frappe.utils.cint(group_id) or None,
-		disabled=frappe.utils.sbool(disabled),
-		attributes=_parse_list_arg(attributes),
-	)
-
-
-@frappe.whitelist()
-def update_device(device_id: int, **fields):
-	require_write()
-	fields.pop("cmd", None)
-	return devices_module.update_device(frappe.utils.cint(device_id), **fields)
-
-
-@frappe.whitelist()
-def delete_device(device_id: int):
-	require_write()
-	return devices_module.delete_device(frappe.utils.cint(device_id))
-
-
-# -----------------------------------------------------------------------------
-# Groups (Section 12)
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_groups(keyword: str | None = None, limit: int | None = None, offset: int | None = None, refresh: bool = False):
-	require_read()
-	return groups_module.get_groups(
-		keyword=keyword,
-		limit=frappe.utils.cint(limit) or None,
-		offset=frappe.utils.cint(offset) or None,
-		refresh=frappe.utils.sbool(refresh),
-	)
-
-
-@frappe.whitelist()
-def get_group(group_id: int):
-	require_read()
-	return groups_module.get_group(frappe.utils.cint(group_id))
-
-
-@frappe.whitelist()
-def get_devices_in_group(group_id: int):
-	require_read()
-	return groups_module.devices_in_group(frappe.utils.cint(group_id))
-
-
-@frappe.whitelist()
-def create_group(name: str, group_id=None, attributes=None):
-	require_write()
-	return groups_module.create_group(name=name, group_id=frappe.utils.cint(group_id) or None, attributes=_parse_list_arg(attributes))
-
-
-@frappe.whitelist()
-def update_group(group_id: int, **fields):
-	require_write()
-	fields.pop("cmd", None)
-	return groups_module.update_group(frappe.utils.cint(group_id), **fields)
-
-
-@frappe.whitelist()
-def delete_group(group_id: int):
-	require_write()
-	return groups_module.delete_group(frappe.utils.cint(group_id))
-
-
-# -----------------------------------------------------------------------------
-# Users (Section 13) - CRUD is Manager-only: unlike Devices/Groups (fleet
-# resources), Users are actual Traccar login accounts, so creating/editing/
-# deleting one is treated as an administrative action (Section 41: handled
-# with the same care as Notifications/Commands/Calendars).
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_users(keyword: str | None = None, limit: int | None = None, offset: int | None = None, refresh: bool = False):
-	require_read()
-	return users_module.get_users(
-		keyword=keyword,
-		limit=frappe.utils.cint(limit) or None,
-		offset=frappe.utils.cint(offset) or None,
-		refresh=frappe.utils.sbool(refresh),
-	)
-
-
-@frappe.whitelist()
-def get_user(user_id: int):
-	require_read()
-	return users_module.get_user(frappe.utils.cint(user_id))
-
-
-@frappe.whitelist()
-def create_user(name: str, email: str, password: str, administrator=False, disabled=False, phone=None, device_limit=None):
-	require_admin()
-	return users_module.create_user(
-		name=name,
-		email=email,
-		password=password,
-		administrator=frappe.utils.sbool(administrator),
-		disabled=frappe.utils.sbool(disabled),
-		phone=phone,
-		device_limit=frappe.utils.cint(device_limit) if device_limit not in (None, "") else None,
-	)
-
-
-@frappe.whitelist()
-def update_user(user_id: int, password=None, **fields):
-	require_admin()
-	fields.pop("cmd", None)
-	return users_module.update_user(frappe.utils.cint(user_id), password=password or None, **fields)
-
-
-@frappe.whitelist()
-def delete_user(user_id: int):
-	require_admin()
-	return users_module.delete_user(frappe.utils.cint(user_id))
-
-
-# -----------------------------------------------------------------------------
-# Live Positions & Position History (Sections 14-15)
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_live_positions(device_id: int | None = None, refresh: bool = False):
-	require_read()
-	return positions_module.get_live_positions(
-		device_id=frappe.utils.cint(device_id) or None,
-		refresh=frappe.utils.sbool(refresh),
-	)
-
-
-@frappe.whitelist()
-def get_position_history(device_id: int, from_date, to_date):
-	require_read()
-	return positions_module.get_position_history(
-		device_id=frappe.utils.cint(device_id), from_date=from_date, to_date=to_date
-	)
-
-
-def _stream_download(content, filename: str, content_type: str):
-	frappe.response["type"] = "download"
-	frappe.response["filename"] = filename
-	frappe.response["filecontent"] = content
-	frappe.response.headers = frappe.response.headers or {}
-	frappe.response.headers["Content-Type"] = content_type
-
-
-@frappe.whitelist()
-def download_positions_csv(device_id: int, from_date, to_date):
-	"""GET-able download endpoint (Section 15/39: use Traccar's native CSV
-	export rather than rebuilding it). Called via a direct URL, not frappe.call,
-	so the browser triggers a real file download.
-	"""
-	require_read()
-	try:
-		content = positions_module.export_positions_csv(frappe.utils.cint(device_id), from_date, to_date)
+		auth = TraccarAuth(settings)
+		auth.clear_session()
+		user = auth.authenticate()
+		info = server.get_server_info.raw(refresh=True)
+		_record_connection(settings, "Connected", None, info.get("version"))
+		return {
+			"success": True,
+			"authenticated": True,
+			"status_code": 200,
+			"message": _("Connection successful"),
+			"server_version": info.get("version"),
+			"account": user.get("email") or user.get("name"),
+		}
 	except TraccarError as exc:
-		frappe.throw(exc.message)
-	_stream_download(content, f"positions_{device_id}.csv", "text/csv")
+		_record_connection(settings, "Failed", exc.user_message, None)
+		return {
+			"success": False,
+			"authenticated": False,
+			"status_code": exc.status_code,
+			"message": exc.user_message,
+			"error": type(exc).__name__,
+		}
+
+
+def _record_connection(settings, status, error, version):
+	frappe.db.set_value(
+		"Traccar Settings",
+		None,
+		{
+			"connection_status": status,
+			"last_connection_test": now_datetime(),
+			"last_error": cstr(error or "")[:500],
+			"server_version": cstr(version or ""),
+		},
+		update_modified=False,
+	)
+	frappe.db.commit()
+	frappe.clear_cache(doctype="Traccar Settings")
 
 
 @frappe.whitelist()
-def download_positions_kml(device_id: int, from_date, to_date):
-	require_read()
-	try:
-		content = positions_module.export_positions_kml(frappe.utils.cint(device_id), from_date, to_date)
-	except TraccarError as exc:
-		frappe.throw(exc.message)
-	_stream_download(content, f"positions_{device_id}.kml", "application/vnd.google-earth.kml+xml")
-
-
-@frappe.whitelist()
-def download_positions_gpx(device_id: int, from_date, to_date):
-	require_read()
-	try:
-		content = positions_module.export_positions_gpx(frappe.utils.cint(device_id), from_date, to_date)
-	except TraccarError as exc:
-		frappe.throw(exc.message)
-	_stream_download(content, f"positions_{device_id}.gpx", "application/gpx+xml")
-
-
-# -----------------------------------------------------------------------------
-# Route (Section 19)
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_route(device_ids=None, group_ids=None, from_date=None, to_date=None):
-	require_read()
-	device_ids = frappe.parse_json(device_ids) if isinstance(device_ids, str) else device_ids
-	group_ids = frappe.parse_json(group_ids) if isinstance(group_ids, str) else group_ids
-	return route_module.get_route(device_ids=device_ids, group_ids=group_ids, from_date=from_date, to_date=to_date)
-
-
-# -----------------------------------------------------------------------------
-# Reports: Trips, Stops, Summary, Events (Sections 16-21, 37)
-# -----------------------------------------------------------------------------
-def _parse_list_arg(value):
-	if isinstance(value, str):
-		return frappe.parse_json(value)
-	return value
-
-
-@frappe.whitelist()
-def get_report(report_key: str, device_ids=None, group_ids=None, from_date=None, to_date=None, event_types=None, daily=None):
-	require_read()
-	return reports_module.generate_report(
-		report_key=report_key,
-		device_ids=_parse_list_arg(device_ids),
-		group_ids=_parse_list_arg(group_ids),
-		from_date=from_date,
-		to_date=to_date,
-		event_types=_parse_list_arg(event_types),
-		daily=frappe.utils.sbool(daily) if daily is not None else None,
+def get_configuration_state():
+	"""Everything the desk needs to render without ever seeing a secret."""
+	ensure_read()
+	settings = get_settings()
+	return ok(
+		{
+			"enabled": bool(cint(settings.enabled)),
+			"configured": bool(settings.traccar_url),
+			"auth_type": settings.auth_type,
+			"connection_status": settings.connection_status,
+			"last_connection_test": cstr(settings.last_connection_test or ""),
+			"server_version": settings.server_version,
+			"live_video": bool(cint(settings.get("enable_live_video"))),
+			"map_tile_url": settings.get("map_tile_url"),
+			"map_attribution": settings.get("map_attribution"),
+			"leaflet_js_url": settings.get("leaflet_js_url"),
+			"leaflet_css_url": settings.get("leaflet_css_url"),
+			"page_length": cint(settings.get("default_page_length")) or 20,
+			"can_manage": is_manager(),
+			"roles": {
+				"manager": ROLE_MANAGER,
+				"user": ROLE_USER,
+				"viewer": ROLE_VIEWER,
+			},
+		}
 	)
 
 
 @frappe.whitelist()
-def download_report(report_key: str, download_type: str, device_ids=None, group_ids=None, from_date=None, to_date=None, event_types=None, daily=None):
-	"""GET-able endpoint: downloads the report as XLSX, or triggers a
-	native email delivery when download_type == "mail" (Section 16-18/21).
-	"""
-	require_read()
+def clear_tracking_cache():
+	ensure_write()
+	clear_cache()
+	return ok(message=_("Cache cleared"))
+
+
+def refresh_connection_status():
+	"""Scheduled hourly probe so the dashboard badge stays meaningful."""
+	settings = frappe.get_single("Traccar Settings")
+	if not cint(settings.enabled) or not settings.traccar_url:
+		return
 	try:
-		content = reports_module.download_report(
-			report_key=report_key,
-			download_type=download_type,
-			device_ids=_parse_list_arg(device_ids),
-			group_ids=_parse_list_arg(group_ids),
-			from_date=from_date,
-			to_date=to_date,
-			event_types=_parse_list_arg(event_types),
-			daily=frappe.utils.sbool(daily) if daily is not None else None,
+		TraccarAuth(settings).validate_session(refresh=True)
+		_record_connection(settings, "Connected", None, settings.server_version)
+	except TraccarError as exc:
+		_record_connection(settings, "Failed", exc.user_message, settings.server_version)
+
+
+# ---------------------------------------------------------------------------
+# Generic list engine
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def get_list(resource, filters=None, refresh=False):
+	"""Backing call for every collection page."""
+	ensure_read()
+	if resource in ("users", "orders"):
+		ensure_admin()
+	return listing.get_list(resource, filters=parse_json_arg(filters, {}), refresh=parse_bool(refresh))
+
+
+@frappe.whitelist()
+def get_filter_options(include=None):
+	"""Device / group / geofence choices used to build filter fields."""
+	ensure_read()
+	include = include or ["devices", "groups"]
+	if isinstance(include, str):
+		include = [part.strip() for part in include.split(",") if part.strip()]
+
+	payload = {}
+	try:
+		if "devices" in include:
+			payload["devices"] = devices.device_choices()
+		if "groups" in include:
+			payload["groups"] = groups.group_choices()
+		if "geofences" in include:
+			payload["geofences"] = geofences.geofence_choices()
+		if "calendars" in include:
+			payload["calendars"] = calendars.calendar_choices()
+	except TraccarError as exc:
+		return exc.as_dict()
+	return ok(payload)
+
+
+# ---------------------------------------------------------------------------
+# Dashboard
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def get_dashboard(refresh=False):
+	ensure_read()
+	refresh = parse_bool(refresh)
+	settings = get_settings()
+
+	if not cint(settings.enabled) or not settings.traccar_url:
+		return fail(_("Traccar is not configured."), 0, "TraccarConfigurationError")
+
+	try:
+		device_rows = listing.fetch_all("devices", {"excludeAttributes": True})
+		group_rows = listing.fetch_all("groups")
+		geofence_rows = listing.fetch_all("geofences")
+		user_rows = listing.fetch_all("users") if is_manager() else []
+
+		online = sum(1 for d in device_rows if cstr(d.get("status")) == "online")
+		offline = sum(1 for d in device_rows if cstr(d.get("status")) == "offline")
+
+		frm, to = today_window()
+		device_ids = [cint(d.get("id")) for d in device_rows][:200]
+		today_counts = {"events": 0, "trips": 0, "stops": 0}
+		if device_ids:
+			for key, report in (("events", "events"), ("trips", "trips"), ("stops", "stops")):
+				try:
+					rows = reports.fetch_report(
+						report, {"deviceId": device_ids, "from": frm, "to": to, "type": ["%"]}
+					)
+					today_counts[key] = len(rows)
+				except TraccarError:
+					today_counts[key] = None
+
+		return ok(
+			{
+				"connected": True,
+				"cards": {
+					"devices": len(device_rows),
+					"online": online,
+					"offline": offline,
+					"groups": len(group_rows),
+					"users": len(user_rows),
+					"geofences": len(geofence_rows),
+					"events_today": today_counts["events"],
+					"trips_today": today_counts["trips"],
+					"stops_today": today_counts["stops"],
+				},
+				"server_version": settings.server_version,
+				"synced_at": cstr(now_datetime()),
+			}
 		)
 	except TraccarError as exc:
-		frappe.throw(exc.message)
-
-	if download_type == "mail":
-		# 204 from Traccar - no file to stream, just confirm it was queued.
-		frappe.response["type"] = "json"
-		frappe.response["message"] = {"success": True, "message": "Report queued for email delivery."}
-		return
-
-	_stream_download(
-		content,
-		f"{report_key}_report.xlsx",
-		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-	)
+		return exc.as_dict()
 
 
-# -----------------------------------------------------------------------------
-# Geofences (Section 22) - full CRUD, spec supports it
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_geofences(keyword=None, device_id=None, group_id=None, limit=None, offset=None, refresh=False):
-	require_read()
-	return geofences_module.get_geofences(
-		keyword=keyword,
-		device_id=frappe.utils.cint(device_id) or None,
-		group_id=frappe.utils.cint(group_id) or None,
-		limit=frappe.utils.cint(limit) or None,
-		offset=frappe.utils.cint(offset) or None,
-		refresh=frappe.utils.sbool(refresh),
-	)
+# ---------------------------------------------------------------------------
+# Devices
+# ---------------------------------------------------------------------------
 
 
 @frappe.whitelist()
-def get_geofence(geofence_id: int):
-	require_read()
-	return geofences_module.get_geofence(frappe.utils.cint(geofence_id))
+def get_devices(filters=None, refresh=False):
+	ensure_read()
+	return devices.list_devices(parse_json_arg(filters, {}), parse_bool(refresh))
 
 
 @frappe.whitelist()
-def create_geofence(name: str, area: str, description: str | None = None, calendar_id=None):
-	require_write()
-	return geofences_module.create_geofence(name=name, area=area, description=description, calendar_id=frappe.utils.cint(calendar_id) or None)
+def get_device(device_id):
+	ensure_read()
+	return devices.get_device(device_id)
 
 
 @frappe.whitelist()
-def update_geofence(geofence_id: int, **fields):
-	require_write()
-	fields.pop("cmd", None)
-	return geofences_module.update_geofence(frappe.utils.cint(geofence_id), **fields)
+def get_device_overview(device_id):
+	"""Device detail header: the record plus its last known position."""
+	ensure_read()
+	try:
+		device = devices.get_device.raw(device_id)
+		latest = positions.fetch_latest(device_ids=[cint(device_id)])
+		return ok({"device": device, "position": latest[0] if latest else None})
+	except TraccarError as exc:
+		return exc.as_dict()
 
 
 @frappe.whitelist()
-def delete_geofence(geofence_id: int):
-	require_write()
-	return geofences_module.delete_geofence(frappe.utils.cint(geofence_id))
+def update_device_accumulators(device_id, total_distance=None, hours=None):
+	ensure_write()
+	return devices.update_accumulators(device_id, total_distance, hours)
 
 
-# -----------------------------------------------------------------------------
-# Notifications (Section 23) - full CRUD, spec supports it. Manager-only:
-# notification rules route real emails/SMS, so configuring them is treated
-# as an administrative action, not a general "read" one (Section 40/41).
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_notifications(keyword=None, device_id=None, group_id=None, limit=None, offset=None, refresh=False):
-	require_admin()
-	return notifications_module.get_notifications(
-		keyword=keyword,
-		device_id=frappe.utils.cint(device_id) or None,
-		group_id=frappe.utils.cint(group_id) or None,
-		limit=frappe.utils.cint(limit) or None,
-		offset=frappe.utils.cint(offset) or None,
-		refresh=frappe.utils.sbool(refresh),
-	)
+# ---------------------------------------------------------------------------
+# Groups / users
+# ---------------------------------------------------------------------------
 
 
 @frappe.whitelist()
-def get_notification_types():
-	require_admin()
-	return notifications_module.get_notification_types()
+def get_group_devices(group_id):
+	ensure_read()
+	return groups.get_group_devices(group_id)
 
 
 @frappe.whitelist()
-def get_notificators(announcement=None):
-	require_admin()
-	return notifications_module.get_notificators(announcement=frappe.utils.sbool(announcement) if announcement is not None else None)
+def get_users(filters=None, refresh=False):
+	ensure_admin()
+	return users.list_users(parse_json_arg(filters, {}), parse_bool(refresh))
+
+
+# ---------------------------------------------------------------------------
+# Positions
+# ---------------------------------------------------------------------------
 
 
 @frappe.whitelist()
-def create_notification(type_: str, notificators: str, description: str | None = None, always=False, calendar_id=None):
-	require_admin()
-	return notifications_module.create_notification(
-		type_=type_,
-		notificators=notificators,
-		description=description,
-		always=frappe.utils.sbool(always),
-		calendar_id=frappe.utils.cint(calendar_id) or None,
+def get_live_positions(device_ids=None, group_id=None, status=None, limit=None, offset=0, sort_by=None, sort_order="asc"):
+	ensure_read()
+	return positions.get_latest_positions(
+		device_ids=device_ids,
+		group_id=group_id,
+		status=status,
+		limit=limit,
+		offset=offset,
+		sort_by=sort_by,
+		sort_order=sort_order,
 	)
 
 
 @frappe.whitelist()
-def update_notification(notification_id: int, **fields):
-	require_admin()
-	fields.pop("cmd", None)
-	return notifications_module.update_notification(frappe.utils.cint(notification_id), **fields)
-
-
-@frappe.whitelist()
-def delete_notification(notification_id: int):
-	require_admin()
-	return notifications_module.delete_notification(frappe.utils.cint(notification_id))
-
-
-@frappe.whitelist()
-def send_test_notification():
-	require_admin()
-	return notifications_module.send_test_notification()
-
-
-# -----------------------------------------------------------------------------
-# Commands (Sections 24-26) - Manager-only throughout. Section 25: "Never
-# allow unauthorized users to send commands. Implement strict permission
-# checking." Section 40 lists Commands only under the Manager role.
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_commands(keyword=None, device_id=None, group_id=None, limit=None, offset=None, refresh=False):
-	require_admin()
-	return commands_module.get_commands(
-		keyword=keyword,
-		device_id=frappe.utils.cint(device_id) or None,
-		group_id=frappe.utils.cint(group_id) or None,
-		limit=frappe.utils.cint(limit) or None,
-		offset=frappe.utils.cint(offset) or None,
-		refresh=frappe.utils.sbool(refresh),
+def get_position_history(device_id, from_time, to_time, limit=None, offset=0, sort_by=None, sort_order="asc"):
+	ensure_read()
+	return positions.get_position_history(
+		device_id, from_time, to_time, limit=limit, offset=offset, sort_by=sort_by, sort_order=sort_order
 	)
 
 
 @frappe.whitelist()
-def get_command(command_id: int):
-	require_admin()
-	return commands_module.get_command(frappe.utils.cint(command_id))
+def export_positions(device_id, from_time, to_time, fmt="csv", geofence_id=None):
+	"""CSV/GPX/KML come straight from Traccar; XLSX and PDF are rendered here."""
+	ensure_read()
+	fmt = cstr(fmt).lower()
+	try:
+		if fmt in ("csv", "gpx", "kml"):
+			content, mime, extension = positions.download_positions(
+				device_id, from_time, to_time, fmt, geofence_id
+			)
+		elif fmt in ("xlsx", "pdf"):
+			rows = positions.fetch_history(device_id, from_time, to_time)
+			content, mime, extension = export_service.build(
+				rows,
+				POSITION_COLUMNS,
+				fmt,
+				title=_("Position History"),
+				meta_lines=[
+					_("Device: {0}").format(device_id),
+					_("Period: {0} to {1}").format(from_time, to_time),
+				],
+			)
+		else:
+			return fail(_("Unsupported export format."), 400)
+	except TraccarError as exc:
+		return exc.as_dict()
 
-
-@frappe.whitelist()
-def get_command_types(device_id=None, text_channel=None):
-	require_admin()
-	return commands_module.get_command_types(
-		device_id=frappe.utils.cint(device_id) or None,
-		text_channel=frappe.utils.sbool(text_channel) if text_channel is not None else None,
+	export_service.send_download(
+		content, export_service.build_filename("position-history", extension), mime
 	)
 
 
-@frappe.whitelist()
-def get_available_commands_for_device(device_id: int):
-	require_admin()
-	return commands_module.get_available_commands_for_device(frappe.utils.cint(device_id))
+# ---------------------------------------------------------------------------
+# Reports
+# ---------------------------------------------------------------------------
 
 
 @frappe.whitelist()
-def create_saved_command(device_id=None, description: str = "", type_: str = "", text_channel=False, attributes=None):
-	require_admin()
-	return commands_module.create_saved_command(
-		device_id=frappe.utils.cint(device_id) or None,
-		description=description,
-		type_=type_,
-		text_channel=frappe.utils.sbool(text_channel),
-		attributes=_parse_list_arg(attributes),
-	)
-
-
-@frappe.whitelist()
-def update_saved_command(command_id: int, **fields):
-	require_admin()
-	fields.pop("cmd", None)
-	return commands_module.update_saved_command(frappe.utils.cint(command_id), **fields)
-
-
-@frappe.whitelist()
-def delete_saved_command(command_id: int):
-	require_admin()
-	return commands_module.delete_saved_command(frappe.utils.cint(command_id))
-
-
-@frappe.whitelist()
-def send_command(device_id=None, group_id=None, saved_command_id=None, type_=None, text_channel=False, attributes=None):
-	require_admin()
-	result = commands_module.send_command(
-		device_id=frappe.utils.cint(device_id) or None,
-		group_id=frappe.utils.cint(group_id) or None,
-		saved_command_id=frappe.utils.cint(saved_command_id) or None,
-		type_=type_ or None,
-		text_channel=frappe.utils.sbool(text_channel),
-		attributes=_parse_list_arg(attributes),
-	)
-	if result["success"]:
-		frappe.get_doc(
-			{
-				"doctype": "Traccar Command Log",
-				"user": frappe.session.user,
-				"device_id": device_id,
-				"group_id": group_id,
-				"command_type": type_,
-				"status": "Sent" if result["status_code"] == 200 else "Queued",
-				"timestamp": frappe.utils.now_datetime(),
+def get_report_meta():
+	ensure_read()
+	return ok(
+		{
+			name: {
+				"label": config["label"],
+				"filters": config["filters"],
+				"columns": config["columns"],
+				"native_download": bool(config.get("download")),
 			}
-		).insert(ignore_permissions=True)
-	return result
-
-
-# -----------------------------------------------------------------------------
-# Drivers (Section 27) - full CRUD, spec supports it. Same read/write split
-# as Devices/Groups (all three roles read, Viewer excluded from writes).
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_drivers(keyword=None, device_id=None, group_id=None, limit=None, offset=None, refresh=False):
-	require_read()
-	return drivers_module.get_drivers(
-		keyword=keyword,
-		device_id=frappe.utils.cint(device_id) or None,
-		group_id=frappe.utils.cint(group_id) or None,
-		limit=frappe.utils.cint(limit) or None,
-		offset=frappe.utils.cint(offset) or None,
-		refresh=frappe.utils.sbool(refresh),
+			for name, config in REPORT_CONFIG.items()
+		}
 	)
 
 
 @frappe.whitelist()
-def get_driver(driver_id: int):
-	require_read()
-	return drivers_module.get_driver(frappe.utils.cint(driver_id))
-
-
-@frappe.whitelist()
-def create_driver(name: str, unique_id: str, attributes=None):
-	require_write()
-	return drivers_module.create_driver(name=name, unique_id=unique_id, attributes=_parse_list_arg(attributes))
-
-
-@frappe.whitelist()
-def update_driver(driver_id: int, **fields):
-	require_write()
-	fields.pop("cmd", None)
-	return drivers_module.update_driver(frappe.utils.cint(driver_id), **fields)
-
-
-@frappe.whitelist()
-def delete_driver(driver_id: int):
-	require_write()
-	return drivers_module.delete_driver(frappe.utils.cint(driver_id))
-
-
-# -----------------------------------------------------------------------------
-# Maintenance (Section 28) - full CRUD, spec supports it
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_maintenance_items(keyword=None, device_id=None, group_id=None, limit=None, offset=None, refresh=False):
-	require_read()
-	return maintenance_module.get_maintenance_items(
-		keyword=keyword,
-		device_id=frappe.utils.cint(device_id) or None,
-		group_id=frappe.utils.cint(group_id) or None,
-		limit=frappe.utils.cint(limit) or None,
-		offset=frappe.utils.cint(offset) or None,
-		refresh=frappe.utils.sbool(refresh),
+def run_report(report, filters=None, limit=None, offset=0, sort_by=None, sort_order="asc"):
+	ensure_read()
+	return reports.run_report(
+		cstr(report),
+		parse_json_arg(filters, {}),
+		limit=limit,
+		offset=offset,
+		sort_by=sort_by,
+		sort_order=sort_order,
 	)
 
 
 @frappe.whitelist()
-def get_maintenance_item(maintenance_id: int):
-	require_read()
-	return maintenance_module.get_maintenance_item(frappe.utils.cint(maintenance_id))
+def export_report(report, filters=None, fmt="xlsx"):
+	"""Export honours the page filters and prefers Traccar's native XLSX."""
+	ensure_read()
+	report = cstr(report)
+	fmt = cstr(fmt).lower()
+	filters = parse_json_arg(filters, {})
 
-
-@frappe.whitelist()
-def create_maintenance_item(name: str, type_: str, start, period, attributes=None):
-	require_write()
-	return maintenance_module.create_maintenance_item(
-		name=name, type_=type_, start=frappe.utils.flt(start), period=frappe.utils.flt(period), attributes=_parse_list_arg(attributes)
-	)
-
-
-@frappe.whitelist()
-def update_maintenance_item(maintenance_id: int, **fields):
-	require_write()
-	fields.pop("cmd", None)
-	return maintenance_module.update_maintenance_item(frappe.utils.cint(maintenance_id), **fields)
-
-
-@frappe.whitelist()
-def delete_maintenance_item(maintenance_id: int):
-	require_write()
-	return maintenance_module.delete_maintenance_item(frappe.utils.cint(maintenance_id))
-
-
-# -----------------------------------------------------------------------------
-# Calendars (Section 29) - full CRUD, Manager-only (see calendars.py docstring)
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_calendars(keyword=None, limit=None, offset=None, refresh=False):
-	require_admin()
-	return calendars_module.get_calendars(
-		keyword=keyword,
-		limit=frappe.utils.cint(limit) or None,
-		offset=frappe.utils.cint(offset) or None,
-		refresh=frappe.utils.sbool(refresh),
-	)
-
-
-@frappe.whitelist()
-def get_calendar(calendar_id: int):
-	require_admin()
-	return calendars_module.get_calendar(frappe.utils.cint(calendar_id))
-
-
-@frappe.whitelist()
-def create_calendar(name: str, ical_data: str, attributes=None):
-	require_admin()
-	return calendars_module.create_calendar(name=name, ical_data=ical_data, attributes=_parse_list_arg(attributes))
-
-
-@frappe.whitelist()
-def update_calendar(calendar_id: int, name=None, ical_data=None, attributes=None):
-	require_admin()
-	return calendars_module.update_calendar(
-		frappe.utils.cint(calendar_id), name=name, ical_data=ical_data, attributes=_parse_list_arg(attributes)
-	)
-
-
-@frappe.whitelist()
-def delete_calendar(calendar_id: int):
-	require_admin()
-	return calendars_module.delete_calendar(frappe.utils.cint(calendar_id))
-
-
-# -----------------------------------------------------------------------------
-# Server Information (Section 30) - GET is public per the spec (see
-# server.py), but still routed through a whitelisted method rather than
-# exposed directly, so the same standardized response/error shape applies
-# and the Desk page doesn't need special-case handling for one endpoint.
-# Read is available to all three roles (server version/map defaults are not
-# sensitive); update is Manager-only.
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_server_info():
-	require_read()
-	return server_module.get_server_info()
-
-
-@frappe.whitelist()
-def update_server_info(**fields):
-	require_admin()
-	fields.pop("cmd", None)
-	return server_module.update_server_info(**fields)
-
-
-@frappe.whitelist()
-def get_server_geocode(latitude: float, longitude: float):
-	require_read()
-	return server_module.get_geocode(latitude, longitude)
-
-
-@frappe.whitelist()
-def get_server_timezones():
-	require_read()
-	return server_module.get_timezones()
-
-
-# -----------------------------------------------------------------------------
-# Server Health (Section 31) - GET /health is public per the spec.
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_health():
-	require_read()
-	return server_module.get_health()
-
-
-# -----------------------------------------------------------------------------
-# Server Statistics (Section 32) - Manager-only, matches Section 40's
-# System/Administration grouping.
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_statistics(from_date, to_date):
-	require_admin()
-	return statistics_module.get_statistics(from_date=from_date, to_date=to_date)
-
-
-# -----------------------------------------------------------------------------
-# Audit Logs (Section 33) - Manager-only; the spec's own description says
-# "Admin only" for GET /audit.
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_audit_log(from_date, to_date):
-	require_admin()
-	return audit_module.get_audit_log(from_date=from_date, to_date=to_date)
-
-
-# -----------------------------------------------------------------------------
-# Orders (Section 34) - full CRUD, same read/write split as Drivers/Geofences
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_orders(keyword=None, user_id=None, exclude_attributes=False, limit=None, offset=None, refresh=False):
-	require_read()
-	return orders_module.get_orders(
-		keyword=keyword,
-		user_id=frappe.utils.cint(user_id) or None,
-		exclude_attributes=frappe.utils.sbool(exclude_attributes),
-		limit=frappe.utils.cint(limit) or None,
-		offset=frappe.utils.cint(offset) or None,
-		refresh=frappe.utils.sbool(refresh),
-	)
-
-
-@frappe.whitelist()
-def get_order(order_id: int):
-	require_read()
-	return orders_module.get_order(frappe.utils.cint(order_id))
-
-
-@frappe.whitelist()
-def create_order(unique_id: str, description=None, from_address=None, to_address=None, attributes=None):
-	require_write()
-	return orders_module.create_order(
-		unique_id=unique_id,
-		description=description,
-		from_address=from_address,
-		to_address=to_address,
-		attributes=_parse_list_arg(attributes),
-	)
-
-
-@frappe.whitelist()
-def update_order(order_id: int, **fields):
-	require_write()
-	fields.pop("cmd", None)
-	return orders_module.update_order(frappe.utils.cint(order_id), **fields)
-
-
-@frappe.whitelist()
-def delete_order(order_id: int):
-	require_write()
-	return orders_module.delete_order(frappe.utils.cint(order_id))
-
-
-# -----------------------------------------------------------------------------
-# Live Video (Section 35) - proxied deliberately; see stream.py docstring
-# for why (Section 35 "don't proxy" vs Section 41 "never expose tokens").
-# Read access only - same role split as Live Positions/Route.
-# -----------------------------------------------------------------------------
-@frappe.whitelist()
-def get_stream_playlist(device_id: int, channel: int = 0):
-	require_read()
 	try:
-		playlist = stream_module.get_playlist(frappe.utils.cint(device_id), frappe.utils.cint(channel))
+		config = reports.get_report_config(report)
+
+		if fmt == "xlsx" and config.get("download"):
+			content, mime = reports.download_native(report, filters, "xlsx")
+			extension = "xlsx"
+		else:
+			rows = reports._decorate(report, reports.fetch_report(report, filters))
+			content, mime, extension = export_service.build(
+				rows,
+				config["columns"],
+				fmt,
+				title=_(config["label"]),
+				meta_lines=[
+					_("Period: {0} to {1}").format(filters.get("from"), filters.get("to")),
+				],
+			)
 	except TraccarError as exc:
-		frappe.throw(exc.message)
-	_stream_download(playlist, "live.m3u8", "application/vnd.apple.mpegurl")
+		return exc.as_dict()
+
+	export_service.send_download(
+		content, export_service.build_filename(f"{report}-report", extension), mime
+	)
 
 
 @frappe.whitelist()
-def get_stream_segment(device_id: int, channel: int = 0, index: int = 0):
-	require_read()
+def mail_report(report, filters=None):
+	"""Ask Traccar to deliver the report by e-mail (``type=mail``)."""
+	ensure_read()
+	return reports.mail_report(cstr(report), parse_json_arg(filters, {}))
+
+
+@frappe.whitelist()
+def export_list(resource, filters=None, fmt="csv"):
+	ensure_read()
+	if resource in ("users", "orders"):
+		ensure_admin()
 	try:
-		content = stream_module.get_segment(frappe.utils.cint(device_id), frappe.utils.cint(channel), frappe.utils.cint(index))
+		config = listing.get_config(resource)
+		rows = listing.fetch_all(resource, parse_json_arg(filters, {}))
+		content, mime, extension = export_service.build(
+			rows, config["columns"], fmt, title=_(config["label"])
+		)
 	except TraccarError as exc:
-		frappe.throw(exc.message)
-	_stream_download(content, f"{index}.ts", "video/mp2t")
+		return exc.as_dict()
+
+	export_service.send_download(content, export_service.build_filename(resource, extension), mime)
+
+
+@frappe.whitelist()
+def export_live_positions(device_ids=None, group_id=None, status=None, fmt="csv"):
+	ensure_read()
+	try:
+		rows = positions.fetch_latest(device_ids=device_ids, group_id=group_id, status=status)
+		content, mime, extension = export_service.build(
+			rows, POSITION_COLUMNS, fmt, title=_("Live Positions")
+		)
+	except TraccarError as exc:
+		return exc.as_dict()
+
+	export_service.send_download(
+		content, export_service.build_filename("live-positions", extension), mime
+	)
+
+
+# ---------------------------------------------------------------------------
+# Events
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def get_events(device_ids=None, group_ids=None, event_types=None, from_time=None, to_time=None, limit=None, offset=0):
+	"""Backed by /reports/events - Traccar has no /events collection endpoint."""
+	ensure_read()
+	return events.list_events(
+		device_ids=device_ids,
+		group_ids=group_ids,
+		event_types=event_types,
+		from_time=from_time,
+		to_time=to_time,
+		limit=limit,
+		offset=offset,
+	)
+
+
+@frappe.whitelist()
+def get_event(event_id):
+	ensure_read()
+	return events.get_event(event_id)
+
+
+# ---------------------------------------------------------------------------
+# Geofences
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def get_geofence(geofence_id):
+	ensure_read()
+	return geofences.get_geofence(geofence_id)
+
+
+@frappe.whitelist()
+def save_geofence(payload, geofence_id=None):
+	ensure_write()
+	payload = parse_json_arg(payload, {})
+	require(payload.get("name"), "Name")
+	require(payload.get("area"), "Area")
+	if geofence_id:
+		return geofences.update_geofence(geofence_id, payload)
+	return geofences.create_geofence(payload)
+
+
+@frappe.whitelist()
+def delete_geofence(geofence_id):
+	ensure_write()
+	return geofences.delete_geofence(geofence_id)
+
+
+# ---------------------------------------------------------------------------
+# Notifications
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def get_notification_types(refresh=False):
+	ensure_read()
+	return notifications.get_notification_types(parse_bool(refresh))
+
+
+@frappe.whitelist()
+def get_notificators(announcement=False, refresh=False):
+	ensure_read()
+	return notifications.get_notificators(parse_bool(announcement), parse_bool(refresh))
+
+
+@frappe.whitelist()
+def save_notification(payload, notification_id=None):
+	ensure_write()
+	payload = parse_json_arg(payload, {})
+	require(payload.get("type"), "Type")
+	if notification_id:
+		return notifications.update_notification(notification_id, payload)
+	return notifications.create_notification(payload)
+
+
+@frappe.whitelist()
+def delete_notification(notification_id):
+	ensure_write()
+	return notifications.delete_notification(notification_id)
+
+
+@frappe.whitelist()
+def send_test_notification(notificator=None):
+	ensure_write()
+	return notifications.send_test_notification(notificator)
+
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def get_command_types(device_id=None, text_channel=False, refresh=False):
+	ensure_read()
+	return commands.get_command_types(device_id, text_channel, parse_bool(refresh))
+
+
+@frappe.whitelist()
+def get_device_saved_commands(device_id):
+	ensure_read()
+	return commands.get_device_saved_commands(device_id)
+
+
+@frappe.whitelist()
+def save_command(payload, command_id=None):
+	ensure_command()
+	payload = parse_json_arg(payload, {})
+	require(payload.get("type"), "Command Type")
+	if command_id:
+		return commands.update_command(command_id, payload)
+	return commands.create_command(payload)
+
+
+@frappe.whitelist()
+def delete_command(command_id):
+	ensure_command()
+	return commands.delete_command(command_id)
+
+
+@frappe.whitelist()
+def send_command(device_id=None, command_type=None, attributes=None, saved_command_id=None, text_channel=False, group_id=None):
+	"""Dispatch a command. Manager role only, on top of Traccar's own checks."""
+	ensure_command()
+	return commands.send_command(
+		device_id=device_id,
+		command_type=command_type,
+		attributes=parse_json_arg(attributes, {}),
+		saved_command_id=saved_command_id,
+		text_channel=parse_bool(text_channel),
+		group_id=group_id,
+	)
+
+
+# ---------------------------------------------------------------------------
+# Drivers / maintenance / calendars / orders
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def save_driver(payload, driver_id=None):
+	ensure_write()
+	payload = parse_json_arg(payload, {})
+	require(payload.get("name"), "Name")
+	require(payload.get("uniqueId"), "Unique ID")
+	if driver_id:
+		return drivers.update_driver(driver_id, payload)
+	return drivers.create_driver(payload)
+
+
+@frappe.whitelist()
+def delete_driver(driver_id):
+	ensure_write()
+	return drivers.delete_driver(driver_id)
+
+
+@frappe.whitelist()
+def save_maintenance(payload, item_id=None):
+	ensure_write()
+	payload = parse_json_arg(payload, {})
+	require(payload.get("name"), "Name")
+	require(payload.get("type"), "Type")
+	if item_id:
+		return maintenance.update_maintenance(item_id, payload)
+	return maintenance.create_maintenance(payload)
+
+
+@frappe.whitelist()
+def delete_maintenance(item_id):
+	ensure_write()
+	return maintenance.delete_maintenance(item_id)
+
+
+@frappe.whitelist()
+def get_calendar(calendar_id):
+	ensure_read()
+	return calendars.get_calendar(calendar_id)
+
+
+@frappe.whitelist()
+def save_order(payload, order_id=None):
+	ensure_admin()
+	payload = parse_json_arg(payload, {})
+	require(payload.get("uniqueId"), "Unique ID")
+	if order_id:
+		return orders.update_order(order_id, payload)
+	return orders.create_order(payload)
+
+
+@frappe.whitelist()
+def delete_order(order_id):
+	ensure_admin()
+	return orders.delete_order(order_id)
+
+
+# ---------------------------------------------------------------------------
+# Server / statistics / audit
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def get_server_info(refresh=False):
+	ensure_read()
+	return server.get_server_info(parse_bool(refresh))
+
+
+@frappe.whitelist()
+def get_server_health():
+	ensure_read()
+	return server.check_health()
+
+
+@frappe.whitelist()
+def get_statistics(from_time, to_time):
+	ensure_admin()
+	return statistics.get_statistics(from_time, to_time)
+
+
+@frappe.whitelist()
+def get_audit_log(from_time, to_time, limit=None, offset=0):
+	ensure_admin()
+	return audit.get_audit_log(from_time, to_time, limit=limit, offset=offset)
+
+
+@frappe.whitelist()
+def export_audit_log(from_time, to_time, fmt="csv"):
+	ensure_admin()
+	try:
+		rows = audit.fetch_actions(from_time, to_time)
+		content, mime, extension = export_service.build(
+			rows, AUDIT_COLUMNS, fmt, title=_("Audit Log")
+		)
+	except TraccarError as exc:
+		return exc.as_dict()
+
+	export_service.send_download(content, export_service.build_filename("audit-log", extension), mime)
+
+
+@frappe.whitelist()
+def reverse_geocode(latitude, longitude):
+	ensure_read()
+	return server.reverse_geocode(latitude, longitude)
+
+
+# ---------------------------------------------------------------------------
+# Live video (relayed so that no credential reaches the browser)
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def get_stream_playlist_url(device_id, channel=0):
+	ensure_read()
+	device_id = cint(require(device_id, "Device"))
+	channel = cint(channel)
+	base = "/api/method/erp_tracking.api.stream_playlist"
+	return ok(
+		{
+			"playlist_url": f"{base}?device_id={device_id}&channel={channel}",
+			"device_id": device_id,
+			"channel": channel,
+		}
+	)
+
+
+@frappe.whitelist()
+def stream_playlist(device_id, channel=0):
+	ensure_read()
+	device_id = cint(device_id)
+	channel = cint(channel)
+	rewrite_base = (
+		f"/api/method/erp_tracking.api.stream_segment?device_id={device_id}&channel={channel}"
+	)
+	try:
+		playlist = stream.fetch_playlist(device_id, channel, rewrite_base)
+	except TraccarError as exc:
+		frappe.local.response.http_status_code = exc.status_code or 502
+		return exc.as_dict()
+
+	frappe.local.response.type = "binary"
+	frappe.local.response.filename = "live.m3u8"
+	frappe.local.response.filecontent = playlist.encode("utf-8")
+	return
+
+
+@frappe.whitelist()
+def stream_segment(device_id, channel=0, index=0):
+	ensure_read()
+	try:
+		content = stream.fetch_segment(device_id, channel, index)
+	except TraccarError as exc:
+		frappe.local.response.http_status_code = exc.status_code or 502
+		return exc.as_dict()
+
+	frappe.local.response.type = "binary"
+	frappe.local.response.filename = f"{cint(index)}.ts"
+	frappe.local.response.filecontent = content
+	return

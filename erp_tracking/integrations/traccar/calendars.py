@@ -1,94 +1,33 @@
-"""Calendars feature module (Section 29).
+"""Calendars - GET /calendars and /calendars/{id}.
 
-The spec defines full CRUD for /calendars. Section 29 asks the Calendars
-page to display "Schedule" and "Timezone" columns, but the actual Calendar
-schema in the OpenAPI spec only has: id, name, data (base64-encoded
-iCalendar), attributes - there is no separate schedule or timezone field.
-Per Section 50 ("do not assume response fields"), this module exposes
-exactly what the spec defines; the "schedule" is the decoded iCalendar
-`data` blob itself (timezone, if any, is embedded inside that iCalendar
-data as a VTIMEZONE block, not a queryable field). The Calendars page
-decodes `data` client-side for a readable preview instead of inventing a
-"timezone" field that doesn't exist on the wire.
-
-Manager-only (see permissions note in api.py): Calendars are consumed by
-Notifications and Geofences for scheduling, and - unlike Devices/Groups -
-don't appear anywhere in the Section 46 navigation for non-Manager roles.
+The Calendar schema only carries ``id``, ``name``, ``data`` (base64 iCalendar)
+and ``attributes``.  The list engine derives a readable schedule and timezone
+from the iCalendar blob rather than inventing fields.
 """
 
-from __future__ import annotations
+from frappe.utils import cint
 
-import base64
-
-import frappe
-
-from .client import TraccarClient
-from .utils import paginate_params
-
-CACHE_TTL_SECONDS = 300  # calendars change rarely
+from erp_tracking.integrations.traccar.client import get_client
+from erp_tracking.integrations.traccar.config import TRACCAR_ENDPOINTS
+from erp_tracking.integrations.traccar.listing import _describe_icalendar, fetch_all, fetch_list
+from erp_tracking.integrations.traccar.utils import require, standard_response
 
 
-def get_calendars(keyword: str | None = None, limit: int | None = None, offset: int | None = None, refresh: bool = False) -> dict:
-	cache_key = f"erp_tracking:calendars:{keyword}:{limit}:{offset}"
-
-	if not refresh:
-		cached = frappe.cache().get_value(cache_key)
-		if cached is not None:
-			return cached
-
-	params = paginate_params(limit, offset)
-	if keyword:
-		params["keyword"] = keyword
-
-	result = TraccarClient().request_safe("GET", "calendars", params=params)
-	if result["success"]:
-		frappe.cache().set_value(cache_key, result, expires_in_sec=CACHE_TTL_SECONDS)
-	return result
+@standard_response
+def list_calendars(filters=None, refresh=False):
+	return fetch_list("calendars", filters=filters, refresh=refresh)
 
 
-def get_calendar(calendar_id: int) -> dict:
-	return TraccarClient().request_safe("GET", "calendar", path_params={"id": calendar_id})
+@standard_response
+def get_calendar(calendar_id):
+	calendar_id = cint(require(calendar_id, "Calendar"))
+	calendar = get_client().get(TRACCAR_ENDPOINTS["calendar"].format(id=calendar_id)) or {}
+	summary, timezone = _describe_icalendar(calendar.get("data"))
+	calendar["summary"] = summary
+	calendar["timezone"] = timezone
+	calendar.pop("data", None)
+	return calendar
 
 
-def _invalidate_cache():
-	frappe.cache().delete_keys("erp_tracking:calendars:")
-
-
-def _encode_ical(ical_text: str) -> str:
-	return base64.b64encode(ical_text.encode("utf-8")).decode("ascii")
-
-
-def create_calendar(name: str, ical_data: str, attributes: dict | None = None) -> dict:
-	"""ical_data is raw iCalendar text (e.g. starting with BEGIN:VCALENDAR);
-	this base64-encodes it per the schema's `data` field description.
-	"""
-	payload = {"name": name, "data": _encode_ical(ical_data)}
-	if attributes:
-		payload["attributes"] = attributes
-
-	result = TraccarClient().request_safe("POST", "calendars", json=payload)
-	if result["success"]:
-		_invalidate_cache()
-	return result
-
-
-def update_calendar(calendar_id: int, name: str | None = None, ical_data: str | None = None, attributes: dict | None = None) -> dict:
-	payload = {"id": int(calendar_id)}
-	if name is not None:
-		payload["name"] = name
-	if ical_data is not None:
-		payload["data"] = _encode_ical(ical_data)
-	if attributes is not None:
-		payload["attributes"] = attributes
-
-	result = TraccarClient().request_safe("PUT", "calendar", path_params={"id": calendar_id}, json=payload)
-	if result["success"]:
-		_invalidate_cache()
-	return result
-
-
-def delete_calendar(calendar_id: int) -> dict:
-	result = TraccarClient().request_safe("DELETE", "calendar", path_params={"id": calendar_id})
-	if result["success"]:
-		_invalidate_cache()
-	return result
+def calendar_choices():
+	return [{"value": cint(c.get("id")), "label": c.get("name")} for c in fetch_all("calendars")]

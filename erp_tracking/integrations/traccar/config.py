@@ -1,68 +1,75 @@
-"""Central configuration for the Traccar integration.
+"""Single source of truth for Traccar endpoints and page/report configuration.
 
-Two responsibilities live here, deliberately kept together so nothing else
-in the app has its own copy of a URL or its own settings-loading code:
+Every path below was verified against the supplied Traccar OpenAPI document
+(version 6.14.5).  Nothing in this app may build a Traccar path any other way.
 
-1. get_settings() - the single place that reads "Traccar Settings" and
-   decrypts secrets. Nothing outside this module (and auth.py, which calls
-   it) should call frappe.get_single("Traccar Settings") directly.
+Notable facts taken from the specification, because they shape the app:
 
-2. TRACCAR_ENDPOINTS - the single source of truth for API paths.
-
-Every path below was verified against the supplied OpenAPI spec
-(Traccar 6.14.5) operation-by-operation, per Section 50 of the brief.
-Two corrections versus a naive reading of the brief's own example map:
-
-  * There is NO "GET /events" list endpoint in the spec. Only:
-      - GET /events/{id}      (fetch a single event)
-      - GET /reports/events   (fetch events for devices/groups in a time range)
-    So the live "Events" page (Section 20) must be built on /reports/events
-    with a required time range, not on a bare /events list. This is called
-    out again in reports.py / events.py when those modules are implemented.
-
-  * "/commands/types" and "/commands/send" are sub-paths of /commands and
-    are listed separately below since they take different parameters.
-
-Do not add a key here without a matching operation in the spec.
+*  There is **no** ``GET /events`` collection endpoint.  Only ``GET /events/{id}``
+   exists.  Event *lists* must be read from ``GET /reports/events``.
+*  ``/positions`` has **no** ``limit``/``offset`` parameters, so history paging is
+   done server-side in Python after fetching the time window.
+*  Native spreadsheet/e-mail delivery only exists for route, events, summary,
+   trips, stops and devices (``/reports/{name}/{type}`` with ``type`` in
+   ``xlsx|mail``).  There is no PDF endpoint anywhere, so PDF is rendered by
+   Frappe.
+*  ``daily`` is only documented on ``/reports/summary/{type}``, not on
+   ``/reports/summary``.
 """
 
-from __future__ import annotations
-
-import frappe
-
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 TRACCAR_ENDPOINTS = {
-	# Server
+	# Server / system
 	"server": "/server",
 	"server_geocode": "/server/geocode",
 	"server_timezones": "/server/timezones",
-	"server_gc": "/server/gc",
-	"server_cache": "/server/cache",
-	"server_reboot": "/server/reboot",
 	"health": "/health",
 	"statistics": "/statistics",
-	# Session (used only for connection testing / optional session-based auth)
+	"audit": "/audit",
+	# Session
 	"session": "/session",
 	"session_token": "/session/token",
 	"session_token_revoke": "/session/token/revoke",
-	# Devices
+	# Fleet
 	"devices": "/devices",
 	"device": "/devices/{id}",
 	"device_accumulators": "/devices/{id}/accumulators",
-	"device_image": "/devices/{id}/image",
-	# Groups
 	"groups": "/groups",
 	"group": "/groups/{id}",
-	# Users
+	"drivers": "/drivers",
+	"driver": "/drivers/{id}",
+	"maintenance": "/maintenance",
+	"maintenance_item": "/maintenance/{id}",
+	"calendars": "/calendars",
+	"calendar": "/calendars/{id}",
+	"orders": "/orders",
+	"order": "/orders/{id}",
 	"users": "/users",
 	"user": "/users/{id}",
-	# Positions
+	"permissions": "/permissions",
+	# Tracking
 	"positions": "/positions",
-	"position": "/positions/{id}",
-	"positions_kml": "/positions/kml",
 	"positions_csv": "/positions/csv",
 	"positions_gpx": "/positions/gpx",
-	# Events (single-record fetch only, see module docstring above)
+	"positions_kml": "/positions/kml",
+	# Events (single record only - see module docstring)
 	"event": "/events/{id}",
+	# Reports
+	"route_report": "/reports/route",
+	"route_report_download": "/reports/route/{type}",
+	"events_report": "/reports/events",
+	"events_report_download": "/reports/events/{type}",
+	"summary_report": "/reports/summary",
+	"summary_report_download": "/reports/summary/{type}",
+	"trips_report": "/reports/trips",
+	"trips_report_download": "/reports/trips/{type}",
+	"stops_report": "/reports/stops",
+	"stops_report_download": "/reports/stops/{type}",
+	"combined_report": "/reports/combined",
+	"geofences_report": "/reports/geofences",
+	"devices_report_download": "/reports/devices/{type}",
 	# Geofences
 	"geofences": "/geofences",
 	"geofence": "/geofences/{id}",
@@ -70,118 +77,313 @@ TRACCAR_ENDPOINTS = {
 	"notifications": "/notifications",
 	"notification": "/notifications/{id}",
 	"notification_types": "/notifications/types",
-	"notification_notificators": "/notifications/notificators",
+	"notificators": "/notifications/notificators",
 	"notification_test": "/notifications/test",
-	"notification_test_notificator": "/notifications/test/{notificator}",
-	"notification_send_notificator": "/notifications/send/{notificator}",
 	# Commands
 	"commands": "/commands",
 	"command": "/commands/{id}",
-	"commands_send": "/commands/send",
-	"commands_types": "/commands/types",
-	# Drivers
-	"drivers": "/drivers",
-	"driver": "/drivers/{id}",
-	# Maintenance
-	"maintenance": "/maintenance",
-	"maintenance_item": "/maintenance/{id}",
-	# Calendars
-	"calendars": "/calendars",
-	"calendar": "/calendars/{id}",
-	# Computed attributes
-	"attributes": "/attributes/computed",
-	"attribute": "/attributes/computed/{id}",
-	"attributes_test": "/attributes/computed/test",
-	# Orders
-	"orders": "/orders",
-	"order": "/orders/{id}",
-	# Audit
-	"audit": "/audit",
-	# Permissions
-	"permissions": "/permissions",
-	"permissions_bulk": "/permissions/bulk",
-	# Reports
-	"reports_combined": "/reports/combined",
-	"reports_route": "/reports/route",
-	"reports_route_type": "/reports/route/{type}",
-	"reports_events": "/reports/events",
-	"reports_events_type": "/reports/events/{type}",
-	"reports_geofences": "/reports/geofences",
-	"reports_summary": "/reports/summary",
-	"reports_summary_type": "/reports/summary/{type}",
-	"reports_trips": "/reports/trips",
-	"reports_trips_type": "/reports/trips/{type}",
-	"reports_stops": "/reports/stops",
-	"reports_stops_type": "/reports/stops/{type}",
-	"reports_devices_type": "/reports/devices/{type}",
-	# Stream (HLS live video)
+	"command_send": "/commands/send",
+	"command_types": "/commands/types",
+	# Attributes
+	"computed_attributes": "/attributes/computed",
+	"computed_attribute": "/attributes/computed/{id}",
+	# Live video
 	"stream_playlist": "/stream/{deviceId}/{channel}/live.m3u8",
 	"stream_segment": "/stream/{deviceId}/{channel}/{index}.ts",
 }
 
-# Endpoints allowed for the generic report engine (Section 37). Anything not
-# in this set is rejected by reports.py before a request is ever built -
-# this is the "validate report names against an allowed list" control from
-# Section 41.
-ALLOWED_REPORT_KEYS = {
-	"reports_trips",
-	"reports_stops",
-	"reports_summary",
-	"reports_events",
-	"reports_route",
-	"reports_geofences",
-	"reports_combined",
+# Formats Traccar itself can produce for /reports/{name}/{type}
+NATIVE_REPORT_FORMATS = ("xlsx", "mail")
+
+# Formats the app can produce (pdf and csv are rendered by Frappe)
+EXPORT_FORMATS = ("csv", "xlsx", "pdf")
+
+
+# ---------------------------------------------------------------------------
+# Generic report engine configuration
+# ---------------------------------------------------------------------------
+# ``filters``       -> query parameters forwarded to Traccar for the JSON call
+# ``download``      -> None when Traccar has no /{type} variant for this report
+# ``columns``       -> fieldname / label / fieldtype, straight from the response
+#                      schemas in the specification.
+REPORT_CONFIG = {
+	"summary": {
+		"endpoint": TRACCAR_ENDPOINTS["summary_report"],
+		"download": TRACCAR_ENDPOINTS["summary_report_download"],
+		"label": "Summary",
+		"filters": ["deviceId", "groupId", "from", "to"],
+		# `daily` is only documented on the /{type} download variant
+		"download_only_filters": ["daily"],
+		"columns": [
+			{"fieldname": "deviceName", "label": "Device", "fieldtype": "Data", "width": 180},
+			{"fieldname": "distance", "label": "Distance (m)", "fieldtype": "Float", "width": 130},
+			{"fieldname": "averageSpeed", "label": "Average Speed (kn)", "fieldtype": "Float", "width": 150},
+			{"fieldname": "maxSpeed", "label": "Maximum Speed (kn)", "fieldtype": "Float", "width": 150},
+			{"fieldname": "spentFuel", "label": "Spent Fuel (l)", "fieldtype": "Float", "width": 130},
+			{"fieldname": "engineHours", "label": "Engine Hours", "fieldtype": "Int", "width": 120},
+		],
+	},
+	"trips": {
+		"endpoint": TRACCAR_ENDPOINTS["trips_report"],
+		"download": TRACCAR_ENDPOINTS["trips_report_download"],
+		"label": "Trips",
+		"filters": ["deviceId", "groupId", "from", "to"],
+		"download_only_filters": [],
+		"columns": [
+			{"fieldname": "deviceName", "label": "Device", "fieldtype": "Data", "width": 160},
+			{"fieldname": "startTime", "label": "Start Time", "fieldtype": "Datetime", "width": 160},
+			{"fieldname": "endTime", "label": "End Time", "fieldtype": "Datetime", "width": 160},
+			{"fieldname": "startAddress", "label": "Start Address", "fieldtype": "Data", "width": 220},
+			{"fieldname": "endAddress", "label": "End Address", "fieldtype": "Data", "width": 220},
+			{"fieldname": "distance", "label": "Distance (m)", "fieldtype": "Float", "width": 120},
+			{"fieldname": "duration", "label": "Duration", "fieldtype": "Duration", "width": 120},
+			{"fieldname": "averageSpeed", "label": "Average Speed (kn)", "fieldtype": "Float", "width": 150},
+			{"fieldname": "maxSpeed", "label": "Maximum Speed (kn)", "fieldtype": "Float", "width": 150},
+			{"fieldname": "spentFuel", "label": "Spent Fuel (l)", "fieldtype": "Float", "width": 120},
+			{"fieldname": "driverName", "label": "Driver", "fieldtype": "Data", "width": 140},
+		],
+	},
+	"stops": {
+		"endpoint": TRACCAR_ENDPOINTS["stops_report"],
+		"download": TRACCAR_ENDPOINTS["stops_report_download"],
+		"label": "Stops",
+		"filters": ["deviceId", "groupId", "from", "to"],
+		"download_only_filters": [],
+		"columns": [
+			{"fieldname": "deviceName", "label": "Device", "fieldtype": "Data", "width": 160},
+			{"fieldname": "startTime", "label": "Start", "fieldtype": "Datetime", "width": 160},
+			{"fieldname": "endTime", "label": "End", "fieldtype": "Datetime", "width": 160},
+			{"fieldname": "duration", "label": "Duration", "fieldtype": "Duration", "width": 120},
+			{"fieldname": "address", "label": "Address", "fieldtype": "Data", "width": 260},
+			{"fieldname": "lat", "label": "Latitude", "fieldtype": "Float", "width": 120},
+			{"fieldname": "lon", "label": "Longitude", "fieldtype": "Float", "width": 120},
+			{"fieldname": "spentFuel", "label": "Spent Fuel (l)", "fieldtype": "Float", "width": 120},
+			{"fieldname": "engineHours", "label": "Engine Hours", "fieldtype": "Int", "width": 120},
+		],
+	},
+	"events": {
+		"endpoint": TRACCAR_ENDPOINTS["events_report"],
+		"download": TRACCAR_ENDPOINTS["events_report_download"],
+		"label": "Events",
+		"filters": ["deviceId", "groupId", "type", "from", "to"],
+		# `alarm` only exists on /reports/events/{type}
+		"download_only_filters": ["alarm"],
+		"columns": [
+			{"fieldname": "eventTime", "label": "Date", "fieldtype": "Datetime", "width": 170},
+			{"fieldname": "deviceId", "label": "Device", "fieldtype": "Data", "width": 160},
+			{"fieldname": "type", "label": "Event Type", "fieldtype": "Data", "width": 160},
+			{"fieldname": "positionId", "label": "Position", "fieldtype": "Int", "width": 100},
+			{"fieldname": "geofenceId", "label": "Geofence", "fieldtype": "Int", "width": 100},
+			{"fieldname": "maintenanceId", "label": "Maintenance", "fieldtype": "Int", "width": 110},
+			{"fieldname": "attributes", "label": "Attributes", "fieldtype": "Data", "width": 240},
+		],
+	},
+	"route": {
+		"endpoint": TRACCAR_ENDPOINTS["route_report"],
+		"download": TRACCAR_ENDPOINTS["route_report_download"],
+		"label": "Route",
+		"filters": ["deviceId", "groupId", "from", "to"],
+		"download_only_filters": [],
+		"columns": [
+			{"fieldname": "fixTime", "label": "Time", "fieldtype": "Datetime", "width": 170},
+			{"fieldname": "deviceId", "label": "Device", "fieldtype": "Data", "width": 150},
+			{"fieldname": "latitude", "label": "Latitude", "fieldtype": "Float", "width": 120},
+			{"fieldname": "longitude", "label": "Longitude", "fieldtype": "Float", "width": 120},
+			{"fieldname": "speed", "label": "Speed (kn)", "fieldtype": "Float", "width": 110},
+			{"fieldname": "course", "label": "Course", "fieldtype": "Float", "width": 100},
+			{"fieldname": "address", "label": "Address", "fieldtype": "Data", "width": 260},
+		],
+	},
+	"geofences": {
+		"endpoint": TRACCAR_ENDPOINTS["geofences_report"],
+		# The specification defines no /reports/geofences/{type} variant.
+		"download": None,
+		"label": "Geofence Visits",
+		"filters": ["deviceId", "groupId", "geofenceId", "from", "to"],
+		"download_only_filters": [],
+		"columns": [
+			{"fieldname": "deviceName", "label": "Device", "fieldtype": "Data", "width": 180},
+			{"fieldname": "geofenceId", "label": "Geofence", "fieldtype": "Int", "width": 120},
+			{"fieldname": "startTime", "label": "Entered", "fieldtype": "Datetime", "width": 170},
+			{"fieldname": "endTime", "label": "Exited", "fieldtype": "Datetime", "width": 170},
+		],
+	},
 }
 
-
-def build_path(endpoint_key: str, **path_params) -> str:
-	"""Resolve an endpoint key to a concrete path, filling in {placeholders}.
-
-	Raises KeyError if the key is not in TRACCAR_ENDPOINTS, so a typo can
-	never silently hit a made-up URL.
-	"""
-	template = TRACCAR_ENDPOINTS[endpoint_key]
-	return template.format(**path_params) if path_params else template
+REPORT_NAMES = tuple(REPORT_CONFIG.keys())
 
 
-class TraccarSettingsData:
-	"""Plain container for the fields the client/auth layer need.
+# ---------------------------------------------------------------------------
+# Generic list engine configuration
+# ---------------------------------------------------------------------------
+# ``params`` is the allow-list of query parameters that may be forwarded to
+# Traccar for that resource - copied verbatim from the specification.
+LIST_CONFIG = {
+	"devices": {
+		"label": "Devices",
+		"endpoint": TRACCAR_ENDPOINTS["devices"],
+		"params": ["all", "userId", "id", "uniqueId", "excludeAttributes", "limit", "offset", "keyword"],
+		"native_paging": True,
+		"columns": [
+			{"fieldname": "id", "label": "ID", "fieldtype": "Int", "width": 70},
+			{"fieldname": "name", "label": "Name", "fieldtype": "Data", "width": 180},
+			{"fieldname": "uniqueId", "label": "Unique ID", "fieldtype": "Data", "width": 150},
+			{"fieldname": "status", "label": "Status", "fieldtype": "Status", "width": 110},
+			{"fieldname": "lastUpdate", "label": "Last Update", "fieldtype": "Datetime", "width": 170},
+			{"fieldname": "category", "label": "Category", "fieldtype": "Data", "width": 120},
+			{"fieldname": "model", "label": "Model", "fieldtype": "Data", "width": 130},
+			{"fieldname": "phone", "label": "Phone", "fieldtype": "Data", "width": 130},
+			{"fieldname": "disabled", "label": "Disabled", "fieldtype": "Check", "width": 90},
+			{"fieldname": "groupId", "label": "Group", "fieldtype": "Int", "width": 100},
+		],
+	},
+	"groups": {
+		"label": "Groups",
+		"endpoint": TRACCAR_ENDPOINTS["groups"],
+		"params": ["all", "userId", "limit", "offset", "keyword"],
+		"native_paging": True,
+		"columns": [
+			{"fieldname": "id", "label": "ID", "fieldtype": "Int", "width": 70},
+			{"fieldname": "name", "label": "Name", "fieldtype": "Data", "width": 260},
+			{"fieldname": "groupId", "label": "Parent Group", "fieldtype": "Int", "width": 130},
+		],
+	},
+	"users": {
+		"label": "Users",
+		"endpoint": TRACCAR_ENDPOINTS["users"],
+		"params": ["userId", "limit", "offset", "keyword"],
+		"native_paging": True,
+		# `password` and `attributes` are deliberately not exposed.
+		"columns": [
+			{"fieldname": "id", "label": "ID", "fieldtype": "Int", "width": 70},
+			{"fieldname": "name", "label": "Name", "fieldtype": "Data", "width": 180},
+			{"fieldname": "email", "label": "Email", "fieldtype": "Data", "width": 220},
+			{"fieldname": "phone", "label": "Phone", "fieldtype": "Data", "width": 130},
+			{"fieldname": "administrator", "label": "Administrator", "fieldtype": "Check", "width": 120},
+			{"fieldname": "readonly", "label": "Readonly", "fieldtype": "Check", "width": 100},
+			{"fieldname": "disabled", "label": "Disabled", "fieldtype": "Check", "width": 100},
+			{"fieldname": "expirationTime", "label": "Expiration", "fieldtype": "Datetime", "width": 160},
+			{"fieldname": "deviceLimit", "label": "Device Limit", "fieldtype": "Int", "width": 110},
+			{"fieldname": "userLimit", "label": "User Limit", "fieldtype": "Int", "width": 110},
+		],
+	},
+	"drivers": {
+		"label": "Drivers",
+		"endpoint": TRACCAR_ENDPOINTS["drivers"],
+		"params": ["all", "userId", "deviceId", "groupId", "refresh", "limit", "offset", "keyword"],
+		"native_paging": True,
+		"columns": [
+			{"fieldname": "id", "label": "ID", "fieldtype": "Int", "width": 70},
+			{"fieldname": "name", "label": "Name", "fieldtype": "Data", "width": 220},
+			{"fieldname": "uniqueId", "label": "Unique ID", "fieldtype": "Data", "width": 180},
+			{"fieldname": "attributes", "label": "Attributes", "fieldtype": "Data", "width": 260},
+		],
+	},
+	"maintenance": {
+		"label": "Maintenance",
+		"endpoint": TRACCAR_ENDPOINTS["maintenance"],
+		"params": ["all", "userId", "deviceId", "groupId", "refresh", "limit", "offset", "keyword"],
+		"native_paging": True,
+		"columns": [
+			{"fieldname": "id", "label": "ID", "fieldtype": "Int", "width": 70},
+			{"fieldname": "name", "label": "Name", "fieldtype": "Data", "width": 220},
+			{"fieldname": "type", "label": "Type", "fieldtype": "Data", "width": 160},
+			{"fieldname": "start", "label": "Start", "fieldtype": "Float", "width": 130},
+			{"fieldname": "period", "label": "Period", "fieldtype": "Float", "width": 130},
+			{"fieldname": "attributes", "label": "Attributes", "fieldtype": "Data", "width": 220},
+		],
+	},
+	"calendars": {
+		"label": "Calendars",
+		"endpoint": TRACCAR_ENDPOINTS["calendars"],
+		"params": ["all", "userId", "limit", "offset", "keyword"],
+		"native_paging": True,
+		# The Calendar schema only has id / name / data / attributes.
+		"columns": [
+			{"fieldname": "id", "label": "ID", "fieldtype": "Int", "width": 70},
+			{"fieldname": "name", "label": "Name", "fieldtype": "Data", "width": 240},
+			{"fieldname": "summary", "label": "Schedule", "fieldtype": "Data", "width": 320},
+			{"fieldname": "timezone", "label": "Timezone", "fieldtype": "Data", "width": 160},
+		],
+	},
+	"orders": {
+		"label": "Orders",
+		"endpoint": TRACCAR_ENDPOINTS["orders"],
+		"params": ["all", "userId", "excludeAttributes", "limit", "offset", "keyword"],
+		"native_paging": True,
+		"columns": [
+			{"fieldname": "id", "label": "ID", "fieldtype": "Int", "width": 70},
+			{"fieldname": "uniqueId", "label": "Unique ID", "fieldtype": "Data", "width": 150},
+			{"fieldname": "description", "label": "Description", "fieldtype": "Data", "width": 240},
+			{"fieldname": "fromAddress", "label": "From", "fieldtype": "Data", "width": 240},
+			{"fieldname": "toAddress", "label": "To", "fieldtype": "Data", "width": 240},
+		],
+	},
+	"notifications": {
+		"label": "Notifications",
+		"endpoint": TRACCAR_ENDPOINTS["notifications"],
+		"params": ["all", "userId", "deviceId", "groupId", "refresh", "limit", "offset", "keyword"],
+		"native_paging": True,
+		# The Notification schema has no `disabled` field; `always` is the closest.
+		"columns": [
+			{"fieldname": "id", "label": "ID", "fieldtype": "Int", "width": 70},
+			{"fieldname": "type", "label": "Type", "fieldtype": "Data", "width": 200},
+			{"fieldname": "description", "label": "Description", "fieldtype": "Data", "width": 240},
+			{"fieldname": "notificators", "label": "Notificators", "fieldtype": "Data", "width": 180},
+			{"fieldname": "calendarId", "label": "Calendar", "fieldtype": "Int", "width": 110},
+			{"fieldname": "always", "label": "Always", "fieldtype": "Check", "width": 90},
+		],
+	},
+	"commands": {
+		"label": "Saved Commands",
+		"endpoint": TRACCAR_ENDPOINTS["commands"],
+		"params": ["all", "userId", "deviceId", "groupId", "refresh", "limit", "offset", "keyword"],
+		"native_paging": True,
+		"columns": [
+			{"fieldname": "id", "label": "ID", "fieldtype": "Int", "width": 70},
+			{"fieldname": "description", "label": "Description", "fieldtype": "Data", "width": 260},
+			{"fieldname": "type", "label": "Type", "fieldtype": "Data", "width": 180},
+			{"fieldname": "deviceId", "label": "Device", "fieldtype": "Int", "width": 110},
+			{"fieldname": "textChannel", "label": "SMS", "fieldtype": "Check", "width": 80},
+			{"fieldname": "attributes", "label": "Parameters", "fieldtype": "Data", "width": 240},
+		],
+	},
+	"geofences": {
+		"label": "Geofences",
+		"endpoint": TRACCAR_ENDPOINTS["geofences"],
+		"params": ["all", "userId", "deviceId", "groupId", "refresh", "limit", "offset", "keyword"],
+		"native_paging": True,
+		"columns": [
+			{"fieldname": "id", "label": "ID", "fieldtype": "Int", "width": 70},
+			{"fieldname": "name", "label": "Name", "fieldtype": "Data", "width": 200},
+			{"fieldname": "description", "label": "Description", "fieldtype": "Data", "width": 240},
+			{"fieldname": "shape", "label": "Type", "fieldtype": "Data", "width": 120},
+			{"fieldname": "area", "label": "Area", "fieldtype": "Data", "width": 320},
+			{"fieldname": "calendarId", "label": "Calendar", "fieldtype": "Int", "width": 110},
+		],
+	},
+}
 
-	Keeping this as a small dataclass-like object (instead of passing the
-	raw Frappe doc around) means secrets only ever flow through here and
-	auth.py - never into devices.py, reports.py, positions.py, etc.
-	"""
+LIST_RESOURCES = tuple(LIST_CONFIG.keys())
 
-	__slots__ = (
-		"url",
-		"enabled",
-		"timeout",
-		"verify_ssl",
-		"auth_type",
-		"username",
-		"password",
-		"api_key",
-	)
+# Columns used when exporting live positions / position history.
+POSITION_COLUMNS = [
+	{"fieldname": "deviceName", "label": "Device", "fieldtype": "Data", "width": 170},
+	{"fieldname": "fixTime", "label": "Time", "fieldtype": "Datetime", "width": 170},
+	{"fieldname": "latitude", "label": "Latitude", "fieldtype": "Float", "width": 120},
+	{"fieldname": "longitude", "label": "Longitude", "fieldtype": "Float", "width": 120},
+	{"fieldname": "speed", "label": "Speed (kn)", "fieldtype": "Float", "width": 110},
+	{"fieldname": "course", "label": "Course", "fieldtype": "Float", "width": 100},
+	{"fieldname": "altitude", "label": "Altitude (m)", "fieldtype": "Float", "width": 120},
+	{"fieldname": "accuracy", "label": "Accuracy (m)", "fieldtype": "Float", "width": 120},
+	{"fieldname": "address", "label": "Address", "fieldtype": "Data", "width": 280},
+]
 
-	def __init__(self, doc):
-		self.url = (doc.traccar_url or "").rstrip("/")
-		self.enabled = bool(doc.enabled)
-		self.timeout = doc.timeout or 15
-		self.verify_ssl = bool(doc.verify_ssl)
-		self.auth_type = doc.auth_type
-		self.username = doc.username
-		self.password = doc.get_password("password", raise_exception=False) if doc.auth_type == "Basic Auth" else None
-		self.api_key = doc.get_password("api_key", raise_exception=False) if doc.auth_type == "API Key" else None
-
-
-def get_settings() -> TraccarSettingsData:
-	"""Load Traccar Settings (the Single DocType) and return a safe container.
-
-	This is the ONLY function in the whole app that should call
-	frappe.get_single("Traccar Settings"). auth.py calls this; client.py
-	calls auth.py. Every feature module (devices.py, positions.py, ...)
-	only ever talks to TraccarClient, so secrets never travel further than
-	this file and auth.py.
-	"""
-	doc = frappe.get_single("Traccar Settings")
-	return TraccarSettingsData(doc)
+AUDIT_COLUMNS = [
+	{"fieldname": "actionTime", "label": "Date", "fieldtype": "Datetime", "width": 170},
+	{"fieldname": "userEmail", "label": "User", "fieldtype": "Data", "width": 220},
+	{"fieldname": "actionType", "label": "Action", "fieldtype": "Data", "width": 140},
+	{"fieldname": "objectType", "label": "Object", "fieldtype": "Data", "width": 160},
+	{"fieldname": "objectId", "label": "Object ID", "fieldtype": "Int", "width": 110},
+	{"fieldname": "address", "label": "Client Address", "fieldtype": "Data", "width": 160},
+]

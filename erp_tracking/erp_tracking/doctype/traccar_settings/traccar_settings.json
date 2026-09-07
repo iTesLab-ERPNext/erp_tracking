@@ -1,27 +1,37 @@
 {
  "actions": [],
- "creation": "2026-08-19 00:00:00.000000",
+ "allow_rename": 0,
+ "creation": "2026-01-01 00:00:00.000000",
  "doctype": "DocType",
+ "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "connection_section",
-  "traccar_url",
   "enabled",
-  "column_break_conn",
+  "traccar_url",
+  "column_break_connection",
   "timeout",
   "verify_ssl",
-  "auth_section",
+  "authentication_section",
   "auth_type",
-  "basic_auth_column",
   "username",
   "password",
-  "api_key_column",
   "api_key",
   "session_section",
   "connection_status",
   "last_connection_test",
   "column_break_session",
-  "last_error"
+  "server_version",
+  "last_error",
+  "preferences_section",
+  "default_page_length",
+  "cache_ttl",
+  "enable_live_video",
+  "column_break_preferences",
+  "map_tile_url",
+  "map_attribution",
+  "leaflet_js_url",
+  "leaflet_css_url"
  ],
  "fields": [
   {
@@ -30,29 +40,29 @@
    "label": "Connection"
   },
   {
-   "description": "Base URL of the Traccar server API, e.g. https://demo.traccar.org/api",
-   "fieldname": "traccar_url",
-   "fieldtype": "Data",
-   "label": "Traccar Server URL",
-   "reqd": 1
-  },
-  {
    "default": "0",
    "fieldname": "enabled",
    "fieldtype": "Check",
-   "label": "Enabled"
+   "label": "Enabled",
+   "description": "Tracking pages stay inactive until this is enabled."
   },
   {
-   "fieldname": "column_break_conn",
+   "fieldname": "traccar_url",
+   "fieldtype": "Data",
+   "label": "Traccar API URL",
+   "options": "URL",
+   "reqd": 0,
+   "description": "Base API URL, for example https://demo.traccar.org/api"
+  },
+  {
+   "fieldname": "column_break_connection",
    "fieldtype": "Column Break"
   },
   {
-   "default": "15",
-   "description": "Request timeout in seconds",
+   "default": "30",
    "fieldname": "timeout",
    "fieldtype": "Int",
-   "label": "Timeout (seconds)",
-   "non_negative": 1
+   "label": "Timeout (seconds)"
   },
   {
    "default": "1",
@@ -61,7 +71,7 @@
    "label": "Verify SSL Certificate"
   },
   {
-   "fieldname": "auth_section",
+   "fieldname": "authentication_section",
    "fieldtype": "Section Break",
    "label": "Authentication"
   },
@@ -75,46 +85,33 @@
   },
   {
    "depends_on": "eval:doc.auth_type=='Basic Auth'",
-   "fieldname": "basic_auth_column",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval:doc.auth_type=='Basic Auth'",
    "fieldname": "username",
    "fieldtype": "Data",
-   "label": "Username",
-   "mandatory_depends_on": "eval:doc.auth_type=='Basic Auth'"
+   "label": "Username (Traccar e-mail)"
   },
   {
    "depends_on": "eval:doc.auth_type=='Basic Auth'",
    "fieldname": "password",
    "fieldtype": "Password",
-   "label": "Password",
-   "mandatory_depends_on": "eval:doc.auth_type=='Basic Auth'"
+   "label": "Password"
   },
   {
    "depends_on": "eval:doc.auth_type=='API Key'",
-   "fieldname": "api_key_column",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval:doc.auth_type=='API Key'",
-   "description": "Sent as an HTTP Bearer token, per the Traccar API's ApiKey security scheme.",
    "fieldname": "api_key",
    "fieldtype": "Password",
-   "label": "API Key",
-   "mandatory_depends_on": "eval:doc.auth_type=='API Key'"
+   "label": "API Key"
   },
   {
    "fieldname": "session_section",
    "fieldtype": "Section Break",
-   "label": "Session / Status"
+   "label": "Connection Status"
   },
   {
+   "default": "Not Tested",
    "fieldname": "connection_status",
    "fieldtype": "Select",
-   "label": "Connection Status",
-   "options": "Not Tested\nConnected\nAuthentication Failed\nServer Unavailable\nTimeout\nInvalid Configuration",
+   "label": "Status",
+   "options": "Not Tested\nConnected\nFailed",
    "read_only": 1
   },
   {
@@ -128,15 +125,75 @@
    "fieldtype": "Column Break"
   },
   {
+   "fieldname": "server_version",
+   "fieldtype": "Data",
+   "label": "Traccar Version",
+   "read_only": 1
+  },
+  {
    "fieldname": "last_error",
    "fieldtype": "Small Text",
    "label": "Last Error",
    "read_only": 1
+  },
+  {
+   "fieldname": "preferences_section",
+   "fieldtype": "Section Break",
+   "label": "Preferences"
+  },
+  {
+   "default": "20",
+   "fieldname": "default_page_length",
+   "fieldtype": "Int",
+   "label": "Default Page Length"
+  },
+  {
+   "default": "60",
+   "fieldname": "cache_ttl",
+   "fieldtype": "Int",
+   "label": "Cache Duration (seconds)",
+   "description": "Applies to device, group, user and calendar lists. Set 0 to disable caching."
+  },
+  {
+   "default": "0",
+   "fieldname": "enable_live_video",
+   "fieldtype": "Check",
+   "label": "Enable Live Video",
+   "description": "Relays HLS streams through the server so no Traccar credential reaches the browser."
+  },
+  {
+   "fieldname": "column_break_preferences",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+   "fieldname": "map_tile_url",
+   "fieldtype": "Data",
+   "label": "Map Tile URL"
+  },
+  {
+   "default": "&copy; OpenStreetMap contributors",
+   "fieldname": "map_attribution",
+   "fieldtype": "Data",
+   "label": "Map Attribution"
+  },
+  {
+   "default": "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+   "fieldname": "leaflet_js_url",
+   "fieldtype": "Data",
+   "label": "Leaflet Script URL"
+  },
+  {
+   "default": "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+   "fieldname": "leaflet_css_url",
+   "fieldtype": "Data",
+   "label": "Leaflet Stylesheet URL"
   }
  ],
+ "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-19 00:00:00.000000",
+ "modified": "2026-01-01 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "ERP Tracking",
  "name": "Traccar Settings",
@@ -144,15 +201,24 @@
  "permissions": [
   {
    "create": 1,
-   "email": 0,
-   "export": 0,
-   "print": 0,
+   "email": 1,
+   "print": 1,
    "read": 1,
    "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 0,
+   "print": 0,
+   "read": 1,
+   "role": "ERP Tracking Manager",
    "share": 0,
    "write": 1
   }
  ],
+ "quick_entry": 0,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

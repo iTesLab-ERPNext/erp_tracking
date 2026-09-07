@@ -1,107 +1,52 @@
-"""Groups feature module (Section 12)."""
+"""Groups - GET/POST/PUT/DELETE /groups and /groups/{id}."""
 
-from __future__ import annotations
+from frappe.utils import cint
 
-import frappe
-
-from .client import TraccarClient
-from .utils import paginate_params
-
-CACHE_TTL_SECONDS = 60  # groups change far less often than device status
+from erp_tracking.integrations.traccar.client import get_client
+from erp_tracking.integrations.traccar.config import TRACCAR_ENDPOINTS
+from erp_tracking.integrations.traccar.listing import fetch_all, fetch_list
+from erp_tracking.integrations.traccar.utils import require, standard_response
 
 
-def get_groups(keyword: str | None = None, limit: int | None = None, offset: int | None = None, refresh: bool = False) -> dict:
-	"""List groups, matching GET /groups."""
-	cache_key = f"erp_tracking:groups:{keyword}:{limit}:{offset}"
-
-	if not refresh:
-		cached = frappe.cache().get_value(cache_key)
-		if cached is not None:
-			return cached
-
-	params = paginate_params(limit, offset)
-	if keyword:
-		params["keyword"] = keyword
-
-	result = TraccarClient().request_safe("GET", "groups", params=params)
-
-	if result["success"]:
-		frappe.cache().set_value(cache_key, result, expires_in_sec=CACHE_TTL_SECONDS)
-
-	return result
+@standard_response
+def list_groups(filters=None, refresh=False):
+	return fetch_list("groups", filters=filters, refresh=refresh)
 
 
-def get_group(group_id: int) -> dict:
-	"""Fetch a single group, matching GET /groups/{id}."""
-	return TraccarClient().request_safe("GET", "group", path_params={"id": group_id})
+@standard_response
+def get_group(group_id):
+	group_id = cint(require(group_id, "Group"))
+	return get_client().get(TRACCAR_ENDPOINTS["group"].format(id=group_id))
 
 
-def _invalidate_cache():
-	frappe.cache().delete_keys("erp_tracking:groups:")
+@standard_response
+def get_group_devices(group_id, filters=None):
+	"""Devices whose ``groupId`` matches - /devices has no groupId parameter."""
+	group_id = cint(require(group_id, "Group"))
+	devices = fetch_all("devices", {"excludeAttributes": True})
+	return [d for d in devices if cint(d.get("groupId")) == group_id]
 
 
-def create_group(name: str, group_id: int | None = None, attributes: dict | None = None) -> dict:
-	"""POST /groups. `group_id` here is the *parent* group (the Group
-	schema's own `groupId` field for nested grouping), not this group's id.
-	"""
-	payload = {"name": name}
-	if group_id:
-		payload["groupId"] = int(group_id)
-	if attributes:
-		payload["attributes"] = attributes
-
-	result = TraccarClient().request_safe("POST", "groups", json=payload)
-	if result["success"]:
-		_invalidate_cache()
-	return result
+@standard_response
+def create_group(payload):
+	return get_client().post(TRACCAR_ENDPOINTS["groups"], json_body=payload)
 
 
-def update_group(group_id: int, **fields) -> dict:
-	payload = {"id": int(group_id), **fields}
-	result = TraccarClient().request_safe("PUT", "group", path_params={"id": group_id}, json=payload)
-	if result["success"]:
-		_invalidate_cache()
-	return result
+@standard_response
+def update_group(group_id, payload):
+	group_id = cint(require(group_id, "Group"))
+	payload = dict(payload or {})
+	payload["id"] = group_id
+	return get_client().put(TRACCAR_ENDPOINTS["group"].format(id=group_id), json_body=payload)
 
 
-def delete_group(group_id: int) -> dict:
-	result = TraccarClient().request_safe("DELETE", "group", path_params={"id": group_id})
-	if result["success"]:
-		_invalidate_cache()
-	return result
+@standard_response
+def delete_group(group_id):
+	group_id = cint(require(group_id, "Group"))
+	get_client().delete(TRACCAR_ENDPOINTS["group"].format(id=group_id))
+	return {"deleted": group_id}
 
 
-def count_groups() -> dict:
-	result = get_groups()
-	if not result["success"]:
-		return result
-	return {
-		"success": True,
-		"data": {"total": len(result["data"] or [])},
-		"message": "OK",
-		"status_code": result["status_code"],
-		"error": None,
-	}
-
-
-def devices_in_group(group_id: int) -> dict:
-	"""Devices belonging to a group (Section 12: "Devices in group").
-
-	The /devices endpoint itself has no groupId filter in the spec, so this
-	fetches the full device list and filters client-side on groupId. Kept
-	here (not in devices.py) since it's a Groups-page concern.
-	"""
-	from .devices import get_devices
-
-	result = get_devices()
-	if not result["success"]:
-		return result
-
-	devices = [d for d in (result["data"] or []) if d.get("groupId") == group_id]
-	return {
-		"success": True,
-		"data": devices,
-		"message": "OK",
-		"status_code": result["status_code"],
-		"error": None,
-	}
+def group_choices():
+	groups = fetch_all("groups")
+	return [{"value": cint(g.get("id")), "label": g.get("name")} for g in groups]

@@ -1,63 +1,125 @@
-"""Server feature module (Sections 30-31).
-
-GET /server and GET /health are marked `security: []` in the OpenAPI spec
-- genuinely unauthenticated - so both go through
-TraccarClient.request(..., require_auth=False). Every other operation here
-(PUT /server, GET /server/geocode, GET /server/timezones) has no security
-override in the spec, so it inherits the global BasicAuth/ApiKey
-requirement and goes through the normal authenticated path.
-"""
-
-from __future__ import annotations
+"""Server information, health and geocoding."""
 
 import time
 
 import frappe
+import requests
+from frappe import _
+from frappe.utils import cint, cstr, now_datetime
 
-from .client import TraccarClient
+from erp_tracking.integrations.traccar.auth import get_settings
+from erp_tracking.integrations.traccar.client import get_client
+from erp_tracking.integrations.traccar.config import TRACCAR_ENDPOINTS
+from erp_tracking.integrations.traccar.utils import cached, redact, standard_response
 
-TIMEZONE_CACHE_TTL_SECONDS = 3600
+# Fields from the Server schema that are safe to show in the desk.
+# `bingKey` is deliberately excluded - it is a third-party credential.
+PUBLIC_SERVER_FIELDS = (
+	"id",
+	"version",
+	"registration",
+	"readonly",
+	"deviceReadonly",
+	"limitCommands",
+	"map",
+	"mapUrl",
+	"poiLayer",
+	"announcement",
+	"latitude",
+	"longitude",
+	"zoom",
+	"forceSettings",
+	"coordinateFormat",
+	"openIdEnabled",
+	"openIdForce",
+)
 
 
-def get_server_info() -> dict:
-	"""GET /server - unauthenticated per the spec."""
-	return TraccarClient().request_safe("GET", "server", require_auth=False)
+@standard_response
+def get_server_info(refresh=False):
+	def _call():
+		return get_client().get(TRACCAR_ENDPOINTS["server"]) or {}
+
+	ttl = cint(frappe.get_cached_value("Traccar Settings", None, "cache_ttl")) or 300
+	info = cached(("server_info",), ttl, _call, refresh)
+	return {k: v for k, v in (info or {}).items() if k in PUBLIC_SERVER_FIELDS}
 
 
-def update_server_info(**fields) -> dict:
-	"""PUT /server - requires auth (Manager-only, enforced in api.py)."""
-	return TraccarClient().request_safe("PUT", "server", json=fields)
+@standard_response
+def get_timezones(refresh=False):
+	def _call():
+		return get_client().get(TRACCAR_ENDPOINTS["server_timezones"]) or []
+
+	return cached(("timezones",), 86400, _call, refresh)
 
 
-def get_geocode(latitude: float, longitude: float) -> dict:
-	"""GET /server/geocode - reverse geocode a coordinate. Requires auth
-	(no security override in the spec) even though /server itself doesn't.
-	"""
-	return TraccarClient().request_safe(
-		"GET", "server_geocode", params={"latitude": float(latitude), "longitude": float(longitude)}
+@standard_response
+def reverse_geocode(latitude, longitude):
+	return get_client().get(
+		TRACCAR_ENDPOINTS["server_geocode"],
+		{"latitude": float(latitude), "longitude": float(longitude)},
+		accept="text/plain",
 	)
 
 
-def get_timezones(refresh: bool = False) -> dict:
-	cache_key = "erp_tracking:timezones"
-	if not refresh:
-		cached = frappe.cache().get_value(cache_key)
-		if cached is not None:
-			return cached
-	result = TraccarClient().request_safe("GET", "server_timezones")
-	if result["success"]:
-		frappe.cache().set_value(cache_key, result, expires_in_sec=TIMEZONE_CACHE_TTL_SECONDS)
-	return result
+@standard_response
+def check_health():
+	"""GET /health.
 
-
-def get_health() -> dict:
-	"""GET /health - unauthenticated per the spec, plain-text "OK" body on
-	200 (Section 31). Measures round-trip time client-side for the
-	"Response time" display, since the spec doesn't return one itself.
+	The endpoint is declared with ``security: []``, so it is called without an
+	Authorization header - it is a pure uptime probe.
 	"""
+	settings = get_settings()
+	base_url = cstr(settings.traccar_url).rstrip("/")
+	if not base_url:
+		from erp_tracking.integrations.traccar.exceptions import TraccarConfigurationError
+
+		raise TraccarConfigurationError(_("Traccar server URL is not set."))
+
+	url = base_url + TRACCAR_ENDPOINTS["health"]
 	started = time.monotonic()
-	result = TraccarClient().request_safe("GET", "health", require_auth=False, accept="text/plain")
-	result = dict(result)  # avoid mutating a cached/shared dict
-	result["response_time_ms"] = round((time.monotonic() - started) * 1000, 1)
-	result["healthy"] = result["success"]
-	return result
+	logger = frappe.logger("erp_tracking", allow_site=True)
+
+	try:
+		response = requests.get(
+			url,
+			headers={"Accept": "text/plain"},
+			timeout=cint(settings.timeout) or 30,
+			verify=bool(cint(settings.verify_ssl)),
+		)
+		elapsed = int((time.monotonic() - started) * 1000)
+		healthy = response.status_code == 200
+		logger.info(
+			{
+				"endpoint": TRACCAR_ENDPOINTS["health"],
+				"method": "GET",
+				"status_code": response.status_code,
+				"duration_ms": elapsed,
+			}
+		)
+		return {
+			"healthy": healthy,
+			"status": (response.text or "").strip()[:100] if healthy else "",
+			"status_code": response.status_code,
+			"response_time_ms": elapsed,
+			"checked_at": cstr(now_datetime()),
+		}
+	except requests.RequestException as exc:
+		elapsed = int((time.monotonic() - started) * 1000)
+		logger.warning(
+			{
+				"endpoint": TRACCAR_ENDPOINTS["health"],
+				"method": "GET",
+				"status_code": 0,
+				"duration_ms": elapsed,
+				"error_type": type(exc).__name__,
+				"detail": redact(str(exc)),
+			}
+		)
+		return {
+			"healthy": False,
+			"status": "",
+			"status_code": 0,
+			"response_time_ms": elapsed,
+			"checked_at": cstr(now_datetime()),
+		}

@@ -1,65 +1,40 @@
-from . import __version__ as app_version
-
 app_name = "erp_tracking"
 app_title = "ERP Tracking"
-app_publisher = "Your Company"
+app_publisher = "ERP Tracking"
 app_description = "Traccar GPS tracking integration for ERPNext v15"
 app_email = "support@example.com"
 app_license = "MIT"
 
-# -----------------------------------------------------------------------------
-# Fixtures
-# -----------------------------------------------------------------------------
-# Roles created by this app are exported/imported as fixtures so they survive
-# `bench migrate` and can be version controlled. The actual Role records are
-# created idempotently in erp_tracking.install.after_install as well, so a
-# fresh install always has them even before fixtures are synced.
-fixtures = [
-	{
-		"doctype": "Role",
-		"filters": [
-			[
-				"name",
-				"in",
-				[
-					"ERP Tracking Manager",
-					"ERP Tracking User",
-					"ERP Tracking Viewer",
-				],
-			]
-		],
-	},
-]
+required_apps = ["frappe/erpnext"]
 
-# -----------------------------------------------------------------------------
-# Installation hooks
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Assets (built by `bench build`)
+# ---------------------------------------------------------------------------
+app_include_js = ["erp_tracking.bundle.js"]
+app_include_css = ["erp_tracking.bundle.css"]
+
+# ---------------------------------------------------------------------------
+# Installation
+# ---------------------------------------------------------------------------
 after_install = "erp_tracking.install.after_install"
+after_migrate = "erp_tracking.install.after_migrate"
 
-# -----------------------------------------------------------------------------
-# Website / Desk assets
-# -----------------------------------------------------------------------------
-# erp_tracking.bundle.js lives at public/js/erp_tracking.bundle.js and is
-# built by `bench build` into /assets/erp_tracking/dist/js/erp_tracking.bundle.js
-# automatically, because it follows the required *.bundle.js naming
-# convention. Reference it here by its bare filename only - NOT by an
-# "/assets/..." path, which is not a valid hooks value and breaks the
-# esbuild asset-discovery step (get_all_files_to_build) during `bench build`.
-app_include_js = "erp_tracking.bundle.js"
-app_include_css = []
+# ---------------------------------------------------------------------------
+# Fixtures / translations
+# ---------------------------------------------------------------------------
+# Translations live in erp_tracking/translations/*.csv and are picked up by
+# `bench --site <site> migrate` automatically.
 
-doctype_js = {
-	# "Traccar Settings" JS is auto-loaded by Frappe from the doctype folder,
-	# this map is reserved for future per-doctype client script overrides.
-}
-
-# -----------------------------------------------------------------------------
-# Scheduled tasks (reserved for later phases: cache refresh, health polling)
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Scheduler
+# ---------------------------------------------------------------------------
 scheduler_events = {
-	# "cron": {
-	# 	"*/5 * * * *": [
-	# 		"erp_tracking.integrations.traccar.server.refresh_health_cache"
-	# 	]
-	# }
+	"hourly": [
+		"erp_tracking.api.refresh_connection_status",
+	],
 }
+
+# ---------------------------------------------------------------------------
+# Testing
+# ---------------------------------------------------------------------------
+# before_tests = "erp_tracking.install.before_tests"

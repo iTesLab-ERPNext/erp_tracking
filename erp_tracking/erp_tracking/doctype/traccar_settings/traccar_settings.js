@@ -1,55 +1,77 @@
-// Copyright (c) 2026, Your Company and contributors
-// For license information, please see license.txt
-
+// Traccar Settings form: connection test and status indicator.
 frappe.ui.form.on("Traccar Settings", {
 	refresh(frm) {
-		frm.add_custom_button(__("Test Connection"), () => {
-			test_connection(frm);
-		}).addClass("btn-primary");
+		frm.disable_save();
+		frm.page.set_primary_action(__("Save"), () => frm.save());
 
-		render_status_indicator(frm);
+		frm.add_custom_button(__("Test Connection"), () => test_connection(frm));
+		frm.add_custom_button(__("Clear Cache"), () => {
+			frappe.call({
+				method: "erp_tracking.api.clear_tracking_cache",
+				callback: () => frappe.show_alert({ message: __("Cache cleared"), indicator: "green" }),
+			});
+		});
+		frm.add_custom_button(__("Open Dashboard"), () => frappe.set_route("erp-tracking-dashboard"));
+
+		render_status(frm);
 	},
 
-	connection_status(frm) {
-		render_status_indicator(frm);
+	auth_type(frm) {
+		frm.set_value("connection_status", "Not Tested");
 	},
 });
 
+function render_status(frm) {
+	const status = frm.doc.connection_status || "Not Tested";
+	const map = {
+		Connected: ["green", __("Connection successful")],
+		Failed: ["red", frm.doc.last_error || __("Authentication failed")],
+		"Not Tested": ["orange", __("Connection not tested yet")],
+	};
+	const [colour, message] = map[status] || map["Not Tested"];
+
+	frm.dashboard.clear_headline();
+	frm.dashboard.set_headline(
+		`<span class="indicator ${colour}">${frappe.utils.escape_html(message)}</span>`
+	);
+}
+
 function test_connection(frm) {
-	frappe.show_alert({ message: __("Testing connection..."), indicator: "blue" });
+	if (frm.is_dirty()) {
+		frappe.msgprint(__("Save the settings before testing the connection."));
+		return;
+	}
 
+	frappe.dom.freeze(__("Contacting the Traccar server..."));
 	frappe.call({
-		method: "erp_tracking.erp_tracking.doctype.traccar_settings.traccar_settings.test_connection",
-		freeze: true,
-		freeze_message: __("Testing connection to Traccar..."),
-		callback: (r) => {
+		method: "erp_tracking.api.test_connection",
+		always: () => frappe.dom.unfreeze(),
+		callback(r) {
 			const result = r.message || {};
-			frm.reload_doc();
-
 			if (result.success) {
-				frappe.show_alert({ message: __("🟢 {0}", [result.message]), indicator: "green" });
+				frappe.msgprint({
+					title: __("Connection successful"),
+					indicator: "green",
+					message: __("Signed in to Traccar {0} as {1}.", [
+						frappe.utils.escape_html(result.server_version || "?"),
+						frappe.utils.escape_html(result.account || "?"),
+					]),
+				});
 			} else {
-				frappe.show_alert({ message: __("🔴 {0}", [result.message]), indicator: "red" });
+				frappe.msgprint({
+					title: indicator_title(result.status_code),
+					indicator: result.status_code === 408 ? "orange" : "red",
+					message: frappe.utils.escape_html(result.message || __("Connection failed")),
+				});
 			}
+			frm.reload_doc();
 		},
 	});
 }
 
-// Maps DocType status values to the emoji/color states described in the brief:
-// 🟢 Connection successful / 🔴 Authentication failed / 🔴 Server unavailable
-// 🟠 Connection timeout / 🔴 Invalid configuration
-const STATUS_MAP = {
-	"Connected": { emoji: "🟢", indicator: "green" },
-	"Authentication Failed": { emoji: "🔴", indicator: "red" },
-	"Server Unavailable": { emoji: "🔴", indicator: "red" },
-	"Timeout": { emoji: "🟠", indicator: "orange" },
-	"Invalid Configuration": { emoji: "🔴", indicator: "red" },
-	"Not Tested": { emoji: "⚪", indicator: "grey" },
-};
-
-function render_status_indicator(frm) {
-	const status = frm.doc.connection_status || "Not Tested";
-	const meta = STATUS_MAP[status] || STATUS_MAP["Not Tested"];
-	frm.dashboard.clear_headline();
-	frm.dashboard.set_headline(`${meta.emoji} ${__(status)}`);
+function indicator_title(status_code) {
+	if (status_code === 401 || status_code === 403) return __("Authentication failed");
+	if (status_code === 408) return __("Connection timeout");
+	if (status_code === 0) return __("Invalid configuration");
+	return __("Server unavailable");
 }

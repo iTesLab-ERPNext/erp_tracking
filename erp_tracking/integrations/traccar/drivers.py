@@ -1,78 +1,39 @@
-"""Drivers feature module (Section 27).
+"""Drivers - GET/POST/PUT/DELETE /drivers and /drivers/{id}."""
 
-The spec defines full CRUD for /drivers (same shape as Groups/Geofences),
-so this implements list/get/create/update/delete, matching the pattern
-already used in groups.py and geofences.py.
-"""
+from frappe.utils import cint
 
-from __future__ import annotations
-
-import frappe
-
-from .client import TraccarClient
-from .utils import paginate_params
-
-CACHE_TTL_SECONDS = 60
+from erp_tracking.integrations.traccar.client import get_client
+from erp_tracking.integrations.traccar.config import TRACCAR_ENDPOINTS
+from erp_tracking.integrations.traccar.listing import fetch_list
+from erp_tracking.integrations.traccar.utils import require, standard_response
 
 
-def get_drivers(
-	keyword: str | None = None,
-	device_id: int | None = None,
-	group_id: int | None = None,
-	limit: int | None = None,
-	offset: int | None = None,
-	refresh: bool = False,
-) -> dict:
-	cache_key = f"erp_tracking:drivers:{keyword}:{device_id}:{group_id}:{limit}:{offset}"
-
-	if not refresh:
-		cached = frappe.cache().get_value(cache_key)
-		if cached is not None:
-			return cached
-
-	params = paginate_params(limit, offset)
-	if keyword:
-		params["keyword"] = keyword
-	if device_id:
-		params["deviceId"] = int(device_id)
-	if group_id:
-		params["groupId"] = int(group_id)
-
-	result = TraccarClient().request_safe("GET", "drivers", params=params)
-	if result["success"]:
-		frappe.cache().set_value(cache_key, result, expires_in_sec=CACHE_TTL_SECONDS)
-	return result
+@standard_response
+def list_drivers(filters=None, refresh=False):
+	return fetch_list("drivers", filters=filters, refresh=refresh)
 
 
-def get_driver(driver_id: int) -> dict:
-	return TraccarClient().request_safe("GET", "driver", path_params={"id": driver_id})
+@standard_response
+def get_driver(driver_id):
+	driver_id = cint(require(driver_id, "Driver"))
+	return get_client().get(TRACCAR_ENDPOINTS["driver"].format(id=driver_id))
 
 
-def _invalidate_cache():
-	frappe.cache().delete_keys("erp_tracking:drivers:")
+@standard_response
+def create_driver(payload):
+	return get_client().post(TRACCAR_ENDPOINTS["drivers"], json_body=payload)
 
 
-def create_driver(name: str, unique_id: str, attributes: dict | None = None) -> dict:
-	payload = {"name": name, "uniqueId": unique_id}
-	if attributes:
-		payload["attributes"] = attributes
-
-	result = TraccarClient().request_safe("POST", "drivers", json=payload)
-	if result["success"]:
-		_invalidate_cache()
-	return result
+@standard_response
+def update_driver(driver_id, payload):
+	driver_id = cint(require(driver_id, "Driver"))
+	payload = dict(payload or {})
+	payload["id"] = driver_id
+	return get_client().put(TRACCAR_ENDPOINTS["driver"].format(id=driver_id), json_body=payload)
 
 
-def update_driver(driver_id: int, **fields) -> dict:
-	payload = {"id": int(driver_id), **fields}
-	result = TraccarClient().request_safe("PUT", "driver", path_params={"id": driver_id}, json=payload)
-	if result["success"]:
-		_invalidate_cache()
-	return result
-
-
-def delete_driver(driver_id: int) -> dict:
-	result = TraccarClient().request_safe("DELETE", "driver", path_params={"id": driver_id})
-	if result["success"]:
-		_invalidate_cache()
-	return result
+@standard_response
+def delete_driver(driver_id):
+	driver_id = cint(require(driver_id, "Driver"))
+	get_client().delete(TRACCAR_ENDPOINTS["driver"].format(id=driver_id))
+	return {"deleted": driver_id}

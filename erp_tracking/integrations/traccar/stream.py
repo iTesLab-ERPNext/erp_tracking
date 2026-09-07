@@ -1,90 +1,56 @@
-"""Live Video / Stream feature module (Section 35).
+"""Live video (HLS).
 
-The spec defines two endpoints for HLS playback:
-  GET /stream/{deviceId}/{channel}/live.m3u8   - the HLS playlist
-  GET /stream/{deviceId}/{channel}/{index}.ts  - individual video segments
+The HLS endpoints are authenticated.  Handing the browser a Traccar session
+token would put a credential in the DOM, which the security requirements
+forbid, so the playlist and its segments are relayed by the server and the
+playlist URIs are rewritten to point back at Frappe.  Only the bytes travel
+through ERPNext - no credential ever reaches the client.
 
-Both require the normal BasicAuth/ApiKey authentication - no security
-override in the spec. That creates a direct conflict between two
-requirements in the brief:
-
-  - Section 35: "Do not proxy video through ERPNext unnecessarily."
-  - Section 41 (hard security requirement): "The frontend must never
-    receive passwords, API keys, tokens or Authorization headers."
-
-Traccar's own documented workaround for browser players that can't set a
-custom Authorization header is to append a short-lived session token as a
-query string (`?token=...`, from POST /session/token). But Section 41
-explicitly lists "tokens" alongside passwords and API keys as things the
-frontend must never receive - it doesn't carve out an exception for
-short-lived ones. That workaround is therefore not available here without
-breaking a hard "Never" requirement.
-
-Given the conflict, this module proxies the stream through ERPNext:
-fetching the playlist and each segment server-side (real credentials touch
-only this server-side request, exactly like every other endpoint in the
-app), and rewriting the playlist's segment references to point back at
-this app's own whitelisted segment endpoint instead of Traccar's directly.
-The browser's HLS player only ever talks to ERPNext over the user's
-already-authenticated Frappe session - no Traccar credentials or tokens
-ever reach it. This is "necessary" proxying in the sense Section 35
-allows for (the only alternative violates Section 41), not the general
-video-relaying Section 35 warns against.
+The feature stays off until ``enable_live_video`` is ticked in Traccar
+Settings.
 """
-
-from __future__ import annotations
 
 import re
 
-from .client import TraccarClient
-from .exceptions import TraccarError
+from frappe import _
+from frappe.utils import cint
 
-# Matches a bare "<index>.ts" line in the HLS playlist - the segment
-# reference format implied by the spec's /stream/{deviceId}/{channel}/{index}.ts
-# path (index: integer). Comment/tag lines (starting with '#') are left untouched.
-_SEGMENT_LINE_RE = re.compile(r"^(\d+)\.ts\s*$")
+from erp_tracking.integrations.traccar.auth import get_settings
+from erp_tracking.integrations.traccar.client import get_client
+from erp_tracking.integrations.traccar.config import TRACCAR_ENDPOINTS
+from erp_tracking.integrations.traccar.exceptions import TraccarConfigurationError
+
+SEGMENT_PATTERN = re.compile(r"^(?!#)(\S*?)(\d+)\.ts\s*$", re.MULTILINE)
+PLAYLIST_MIME = "application/vnd.apple.mpegurl"
+SEGMENT_MIME = "video/mp2t"
 
 
-def get_playlist(device_id: int, channel: int) -> str:
-	"""Fetch the HLS playlist and rewrite segment references to point at
-	this app's own proxy endpoint instead of Traccar directly, so the
-	browser never needs Traccar credentials to fetch subsequent segments.
-	"""
-	client = TraccarClient()
-	result = client.request(
-		"GET",
-		"stream_playlist",
-		path_params={"deviceId": int(device_id), "channel": int(channel)},
-		accept="application/vnd.apple.mpegurl",
+def ensure_enabled():
+	settings = get_settings()
+	if not cint(settings.get("enable_live_video")):
+		raise TraccarConfigurationError(_("Live video is disabled in Traccar Settings."))
+
+
+def fetch_playlist(device_id, channel, rewrite_base):
+	"""Return the HLS playlist with segment URIs pointing back at Frappe."""
+	ensure_enabled()
+	endpoint = TRACCAR_ENDPOINTS["stream_playlist"].format(
+		deviceId=cint(device_id), channel=cint(channel)
 	)
-	playlist_text = result["data"]
-	if not isinstance(playlist_text, str):
-		raise TraccarError("Unexpected playlist response from Traccar.", 502)
+	content, _mime = get_client().request_raw("GET", endpoint, accept=PLAYLIST_MIME)
+	playlist = content.decode("utf-8", errors="ignore")
 
-	rewritten_lines = []
-	for line in playlist_text.splitlines():
-		match = _SEGMENT_LINE_RE.match(line.strip())
-		if match:
-			index = match.group(1)
-			rewritten_lines.append(
-				f"/api/method/erp_tracking.api.get_stream_segment?device_id={int(device_id)}&channel={int(channel)}&index={index}"
-			)
-		else:
-			rewritten_lines.append(line)
+	def _rewrite(match):
+		index = match.group(2)
+		return f"{rewrite_base}&index={index}"
 
-	return "\n".join(rewritten_lines)
+	return SEGMENT_PATTERN.sub(_rewrite, playlist)
 
 
-def get_segment(device_id: int, channel: int, index: int) -> bytes:
-	"""Fetch one .ts video segment server-side and return raw bytes."""
-	client = TraccarClient()
-	result = client.request(
-		"GET",
-		"stream_segment",
-		path_params={"deviceId": int(device_id), "channel": int(channel), "index": int(index)},
-		accept="video/mp2t",
+def fetch_segment(device_id, channel, index):
+	ensure_enabled()
+	endpoint = TRACCAR_ENDPOINTS["stream_segment"].format(
+		deviceId=cint(device_id), channel=cint(channel), index=cint(index)
 	)
-	data = result["data"]
-	if not isinstance(data, (bytes, bytearray)):
-		raise TraccarError("Unexpected segment response from Traccar.", 502)
-	return data
+	content, _mime = get_client().request_raw("GET", endpoint, accept=SEGMENT_MIME)
+	return content

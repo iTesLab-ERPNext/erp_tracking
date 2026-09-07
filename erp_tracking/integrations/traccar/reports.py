@@ -1,151 +1,190 @@
-"""Generic report engine (Section 37) covering Trips, Stops, Summary, Events.
+"""Generic report engine driven by :data:`REPORT_CONFIG`.
 
-One module, one REPORT_CONFIG map, four reports - instead of a hardcoded
-module per report type. Every report's request shape (device/group required,
-from/to required, same param encoding) is identical per the spec, so
-generate_report()/download_report() are shared; only the endpoint keys and
-optional extra filters differ per entry in REPORT_CONFIG.
-
-IMPORTANT deviation from a literal reading of Sections 16-18/21 ("Export
-CSV, Export XLSX, Export PDF"): the OpenAPI spec's report download
-endpoints (`/reports/{trips,stops,summary,events}/{type}`) only support
-`type=xlsx` (native spreadsheet) and `type=mail` (server queues an email
-delivery). There is no CSV or PDF export operation for these reports
-anywhere in the spec. Per Section 50 ("do not invent endpoints... do not
-assume CRUD/operations exist"), this module exposes Export XLSX and Email
-Report only. CSV/GPX/KML export DOES exist for raw positions (see
-positions.py, Section 15) - that is unrelated to these aggregate reports.
-
-Also per the note in config.py: there is no `GET /events` list endpoint.
-The Events page (Section 20) is built on `GET /reports/events` here -
-functionally the same request as the Events Report (Section 21), just
-rendered as a live list with badges instead of an export-oriented table.
+One implementation covers summary, trips, stops, events, route and geofence
+reports.  The report name is always validated against the allow-list, so no
+caller can point the engine at an arbitrary Traccar path.
 """
 
-from __future__ import annotations
+from frappe import _
+from frappe.utils import cint, cstr
 
-from .client import TraccarClient
-from .exceptions import TraccarError
-from .utils import to_iso8601
+from erp_tracking.integrations.traccar.client import get_client
+from erp_tracking.integrations.traccar.config import NATIVE_REPORT_FORMATS, REPORT_CONFIG
+from erp_tracking.integrations.traccar.devices import device_map
+from erp_tracking.integrations.traccar.exceptions import TraccarAPIError
+from erp_tracking.integrations.traccar.utils import (
+	paginate,
+	parse_id_list,
+	parse_str_list,
+	require,
+	sort_rows,
+	standard_response,
+	stringify_attributes,
+	to_iso,
+)
 
-REPORT_CONFIG = {
-	"trips": {
-		"endpoint": "reports_trips",
-		"download_endpoint": "reports_trips_type",
-		"supports_event_types": False,
-		"supports_daily": False,
-	},
-	"stops": {
-		"endpoint": "reports_stops",
-		"download_endpoint": "reports_stops_type",
-		"supports_event_types": False,
-		"supports_daily": False,
-	},
-	"summary": {
-		"endpoint": "reports_summary",
-		"download_endpoint": "reports_summary_type",
-		"supports_event_types": False,
-		"supports_daily": True,
-	},
-	"events": {
-		"endpoint": "reports_events",
-		"download_endpoint": "reports_events_type",
-		"supports_event_types": True,
-		"supports_daily": False,
-	},
-}
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-def _client_error(message: str) -> dict:
-	return {
-		"success": False,
-		"data": None,
-		"message": message,
-		"status_code": 400,
-		"error": "TraccarClientValidationError",
-	}
+def get_report_config(name):
+	config = REPORT_CONFIG.get(cstr(name))
+	if not config:
+		raise TraccarAPIError(_("Unknown report."), 400, detail=cstr(name))
+	return config
 
 
-def _build_params(cfg: dict, device_ids=None, group_ids=None, from_date=None, to_date=None, event_types=None, daily=None) -> dict:
-	if not device_ids and not group_ids:
-		raise TraccarError("At least one device or group is required.", 400)
-	if not from_date or not to_date:
-		raise TraccarError("Both From and To dates are required.", 400)
+def build_report_params(name, filters, include_download_only=False):
+	"""Translate desk filters into the exact query parameters of the endpoint."""
+	config = get_report_config(name)
+	filters = filters or {}
+	allowed = list(config["filters"])
+	if include_download_only:
+		allowed += config.get("download_only_filters", [])
 
-	params = {"from": to_iso8601(from_date), "to": to_iso8601(to_date)}
-	if device_ids:
-		params["deviceId"] = [int(d) for d in device_ids]
-	if group_ids:
-		params["groupId"] = [int(g) for g in group_ids]
-	if cfg["supports_event_types"] and event_types:
-		params["type"] = list(event_types)
-	if cfg["supports_daily"] and daily is not None:
-		params["daily"] = bool(daily)
-	return params
+	params = {}
+
+	if "deviceId" in allowed:
+		params["deviceId"] = parse_id_list(filters.get("deviceId"))
+	if "groupId" in allowed:
+		params["groupId"] = parse_id_list(filters.get("groupId"))
+	if "geofenceId" in allowed:
+		params["geofenceId"] = parse_id_list(filters.get("geofenceId"))
+	if "type" in allowed:
+		types = parse_str_list(filters.get("type")) or ["%"]
+		# `type` is style=form, explode=false -> comma separated
+		params["type"] = ",".join(types)
+	if "alarm" in allowed and filters.get("alarm"):
+		params["alarm"] = ",".join(parse_str_list(filters.get("alarm")))
+	if "daily" in allowed and filters.get("daily"):
+		params["daily"] = "true"
+
+	params["from"] = to_iso(require(filters.get("from"), "From Date"))
+	params["to"] = to_iso(require(filters.get("to"), "To Date"), end_of_day=True)
+
+	if not params.get("deviceId") and not params.get("groupId") and "deviceId" in allowed:
+		raise TraccarAPIError(_("Select at least one device or one group."), 400)
+
+	return {k: v for k, v in params.items() if v not in (None, "", [])}
 
 
-def generate_report(
-	report_key: str,
-	device_ids: list[int] | None = None,
-	group_ids: list[int] | None = None,
-	from_date=None,
-	to_date=None,
-	event_types: list[str] | None = None,
-	daily: bool | None = None,
-) -> dict:
-	"""Fetch JSON rows for a report (Section 37 dynamic API request step).
+def fetch_report(name, filters):
+	config = get_report_config(name)
+	params = build_report_params(name, filters)
+	rows = get_client().get(config["endpoint"], params) or []
+	return list(rows)
 
-	report_key is checked against REPORT_CONFIG, a fixed dict defined in
-	this file - never user-supplied - satisfying Section 41's "validate
-	report names against an allowed list."
+
+def _decorate(name, rows):
+	"""Resolve device names for reports whose rows only carry ``deviceId``."""
+	if name in ("events", "route", "geofences"):
+		devices = device_map()
+		for row in rows:
+			device = devices.get(cint(row.get("deviceId"))) or {}
+			row["deviceName"] = device.get("name") or row.get("deviceId")
+	return stringify_attributes(rows)
+
+
+@standard_response
+def run_report(name, filters=None, limit=None, offset=0, sort_by=None, sort_order="asc"):
+	config = get_report_config(name)
+	rows = _decorate(name, fetch_report(name, filters))
+	rows = sort_rows(rows, sort_by, sort_order)
+
+	result = paginate(rows, limit, offset)
+	result["columns"] = config["columns"]
+	result["label"] = config["label"]
+	result["report"] = name
+	result["kpi"] = build_kpis(name, rows)
+	if name == "route":
+		result["track"] = [
+			[r.get("latitude"), r.get("longitude")]
+			for r in rows
+			if r.get("latitude") is not None and r.get("longitude") is not None
+		]
+	return result
+
+
+def build_kpis(name, rows):
+	"""Headline numbers for the report cards, computed from returned rows only."""
+	if not rows:
+		return []
+
+	def total(field):
+		return sum(float(r.get(field) or 0) for r in rows)
+
+	def maximum(field):
+		values = [float(r.get(field) or 0) for r in rows]
+		return max(values) if values else 0
+
+	if name == "summary":
+		return [
+			{"label": _("Devices"), "value": len(rows)},
+			{"label": _("Total Distance (km)"), "value": round(total("distance") / 1000.0, 2)},
+			{"label": _("Maximum Speed (km/h)"), "value": round(maximum("maxSpeed") * 1.852, 1)},
+			{"label": _("Spent Fuel (l)"), "value": round(total("spentFuel"), 2)},
+			{"label": _("Engine Hours"), "value": round(total("engineHours") / 3600000.0, 1)},
+		]
+	if name == "trips":
+		return [
+			{"label": _("Trips"), "value": len(rows)},
+			{"label": _("Total Distance (km)"), "value": round(total("distance") / 1000.0, 2)},
+			{"label": _("Driving Time (h)"), "value": round(total("duration") / 3600000.0, 1)},
+			{"label": _("Maximum Speed (km/h)"), "value": round(maximum("maxSpeed") * 1.852, 1)},
+		]
+	if name == "stops":
+		return [
+			{"label": _("Stops"), "value": len(rows)},
+			{"label": _("Stopped Time (h)"), "value": round(total("duration") / 3600000.0, 1)},
+		]
+	if name == "events":
+		types = {}
+		for row in rows:
+			types[row.get("type")] = types.get(row.get("type"), 0) + 1
+		top = sorted(types.items(), key=lambda kv: kv[1], reverse=True)[:3]
+		return [{"label": _("Events"), "value": len(rows)}] + [
+			{"label": _(cstr(k)), "value": v} for k, v in top
+		]
+	if name == "route":
+		return [{"label": _("Positions"), "value": len(rows)}]
+	if name == "geofences":
+		return [{"label": _("Visits"), "value": len(rows)}]
+	return []
+
+
+def download_native(name, filters, fmt="xlsx"):
+	"""Use Traccar's own ``/reports/{name}/{type}`` endpoint.
+
+	``fmt='xlsx'`` returns ``(bytes, mime)``; ``fmt='mail'`` queues the report
+	for e-mail delivery on the Traccar side and returns ``(None, None)``.
 	"""
-	cfg = REPORT_CONFIG.get(report_key)
-	if not cfg:
-		return _client_error(f"Unknown report: {report_key}")
+	config = get_report_config(name)
+	if not config.get("download"):
+		raise TraccarAPIError(
+			_("Traccar does not provide a downloadable version of this report."), 400
+		)
+	fmt = cstr(fmt).lower()
+	if fmt not in NATIVE_REPORT_FORMATS:
+		raise TraccarAPIError(_("Unsupported report format."), 400)
 
-	try:
-		params = _build_params(cfg, device_ids, group_ids, from_date, to_date, event_types, daily)
-	except TraccarError as exc:
-		return _client_error(exc.message)
+	params = build_report_params(name, filters, include_download_only=True)
+	endpoint = config["download"].format(type=fmt)
+	accept = XLSX_MIME if fmt == "xlsx" else "*/*"
+	content, _mime = get_client().request_raw("GET", endpoint, params=params, accept=accept)
 
-	return TraccarClient().request_safe("GET", cfg["endpoint"], params=params)
+	if fmt == "mail":
+		return None, None
+	return content, XLSX_MIME
 
 
-def download_report(
-	report_key: str,
-	download_type: str,
-	device_ids: list[int] | None = None,
-	group_ids: list[int] | None = None,
-	from_date=None,
-	to_date=None,
-	event_types: list[str] | None = None,
-	daily: bool | None = None,
-):
-	"""Download or email a report via Traccar's native export (Section 39).
+@standard_response
+def mail_report(name, filters=None):
+	download_native(name, filters, fmt="mail")
+	return {"queued": True}
 
-	Returns raw XLSX bytes when download_type == "xlsx", or None when
-	download_type == "mail" (Traccar responds 204 and queues delivery
-	server-side). Raises TraccarError on validation/API failure - the
-	caller (a whitelisted method) turns that into a clean frappe.throw.
-	"""
-	cfg = REPORT_CONFIG.get(report_key)
-	if not cfg:
-		raise TraccarError(f"Unknown report: {report_key}", 400)
-	if download_type not in ("xlsx", "mail"):
-		raise TraccarError("Unsupported export type. Only 'xlsx' and 'mail' are available.", 400)
 
-	params = _build_params(cfg, device_ids, group_ids, from_date, to_date, event_types, daily)
-	accept = (
-		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-		if download_type == "xlsx"
-		else "application/json"
-	)
+def fetch_devices_report():
+	"""``/reports/devices/{type}`` is download-only - no JSON variant exists."""
+	from erp_tracking.integrations.traccar.config import TRACCAR_ENDPOINTS
 
-	result = TraccarClient().request(
-		"GET",
-		cfg["download_endpoint"],
-		path_params={"type": download_type},
-		params=params,
-		accept=accept,
-	)
-	return result["data"]
+	endpoint = TRACCAR_ENDPOINTS["devices_report_download"].format(type="xlsx")
+	return get_client().request_raw("GET", endpoint, accept=XLSX_MIME)

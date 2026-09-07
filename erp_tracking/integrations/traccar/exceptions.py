@@ -1,56 +1,71 @@
-"""Exception hierarchy for the Traccar integration.
+"""Typed exceptions for the Traccar integration.
 
-Every exception carries a `status_code` (HTTP status where applicable, or
-None for local/config errors) and a `message` that is safe to show directly
-to end users in the Frappe Desk UI - no stack traces, no leaked internals.
+Every exception carries a *user_message* that is safe to display in the desk UI
+and an optional *status_code*.  Stack traces and raw upstream bodies are never
+placed in ``user_message``.
 """
+
+from frappe import _
 
 
 class TraccarError(Exception):
 	"""Base class for all Traccar integration errors."""
 
-	def __init__(self, message: str, status_code: int | None = None):
-		self.message = message
-		self.status_code = status_code
-		super().__init__(message)
+	default_message = "Traccar request failed."
+	status_code = None
+
+	def __init__(self, message=None, status_code=None, detail=None):
+		self.user_message = message or _(self.default_message)
+		self.status_code = status_code if status_code is not None else self.status_code
+		# ``detail`` is for the server log only. It is never returned to the client.
+		self.detail = detail
+		super().__init__(self.user_message)
+
+	def as_dict(self):
+		return {
+			"success": False,
+			"data": None,
+			"message": self.user_message,
+			"status_code": self.status_code,
+			"error": self.__class__.__name__,
+		}
 
 
 class TraccarConfigurationError(TraccarError):
-	"""Raised when Traccar Settings is missing, disabled, or invalid."""
+	default_message = "Traccar is not configured."
+	status_code = 0
 
 
 class TraccarConnectionError(TraccarError):
-	"""Raised when the Traccar server cannot be reached (DNS, refused, etc.)."""
+	default_message = "Traccar server unavailable."
+	status_code = 503
 
 
 class TraccarTimeoutError(TraccarError):
-	"""Raised when a request exceeds the configured timeout."""
+	default_message = "Request timeout."
+	status_code = 408
 
 
 class TraccarAuthenticationError(TraccarError):
-	"""Raised on HTTP 401 / 403 responses from Traccar."""
+	default_message = "Authentication failed."
+	status_code = 401
+
+
+class TraccarPermissionError(TraccarError):
+	default_message = "You do not have permission to access this resource."
+	status_code = 403
+
+
+class TraccarNotFoundError(TraccarError):
+	default_message = "The requested Traccar record was not found."
+	status_code = 404
+
+
+class TraccarRateLimitError(TraccarError):
+	default_message = "Too many requests to the Traccar server. Please retry shortly."
+	status_code = 429
 
 
 class TraccarAPIError(TraccarError):
-	"""Raised for any other non-2xx response from Traccar (404, 429, 5xx, ...)."""
-
-
-# Maps HTTP status codes to a short, user-facing message.
-# Used by client.py to build consistent, non-leaky error messages across
-# every feature module (devices, positions, reports, commands, ...).
-HTTP_STATUS_MESSAGES = {
-	400: "Invalid request sent to Traccar.",
-	401: "Authentication failed.",
-	403: "You do not have permission to access this resource.",
-	404: "The requested resource was not found on the Traccar server.",
-	408: "Request timeout.",
-	429: "Too many requests. Please slow down and try again shortly.",
-	500: "Traccar server encountered an internal error.",
-	502: "Traccar server is unavailable.",
-	503: "Traccar server is unavailable.",
-	504: "Traccar server did not respond in time.",
-}
-
-
-def status_message(status_code: int) -> str:
-	return HTTP_STATUS_MESSAGES.get(status_code, "Traccar server unavailable.")
+	default_message = "Traccar rejected the request."
+	status_code = 400

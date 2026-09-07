@@ -1,153 +1,181 @@
-"ERP Tracking","Suivi ERP"
-"Dashboard","Tableau de bord"
-"Devices","Véhicules"
-"Device","Véhicule"
-"Groups","Groupes"
-"Users","Utilisateurs"
-"Live Positions","Positions en temps réel"
-"Position History","Historique des positions"
-"Route","Itinéraire"
-"Trips","Trajets"
-"Stops","Arrêts"
-"Summary","Résumé"
-"Events","Événements"
-"Event Type","Type d'événement"
-"Event Types","Types d'événements"
-"Reports","Rapports"
-"Geofences","Géorepérages"
-"Geofence","Géorepérage"
-"Notifications","Notifications"
-"Notification","Notification"
-"Commands","Commandes"
-"Command Types","Types de commandes"
-"Saved Commands","Commandes enregistrées"
-"Send Command","Envoyer la commande"
-"Drivers","Chauffeurs"
-"Driver","Chauffeur"
-"Maintenance","Maintenance"
-"Calendars","Calendriers"
-"Calendar","Calendrier"
-"Server Information","Informations serveur"
-"Server Health","État du serveur"
-"Statistics","Statistiques"
-"Audit Logs","Journaux d'audit"
-"Orders","Commandes clients"
-"Live Camera","Caméra en direct"
-"Settings","Configuration"
-"Traccar Settings","Configuration Traccar"
-"Test Connection","Tester la connexion"
-"Connection successful","Connexion réussie"
-"Authentication failed","Échec de l'authentification"
-"Server unavailable","Serveur indisponible"
-"Connection timeout","Délai de connexion dépassé"
-"Invalid configuration","Configuration invalide"
-"Traccar is not configured.","Traccar n'est pas configuré."
-"Connected","Connecté"
-"Disconnected","Déconnecté"
-"Connected to Traccar","Connecté à Traccar"
-"Generate Report","Générer le rapport"
-"Generate","Générer"
-"Export","Exporter"
-"Export CSV","Exporter en CSV"
-"Export XLSX","Exporter en XLSX"
-"Export KML","Exporter en KML"
-"Export GPX","Exporter en GPX"
-"Email Report","Envoyer le rapport par courriel"
-"Report queued for email delivery.","Rapport mis en file d'attente pour envoi par courriel."
-"Refresh","Actualiser"
-"Search...","Rechercher..."
-"Search keyword filter","Filtre de recherche par mot-clé"
-"Previous","Précédent"
-"Next","Suivant"
-"No records found.","Aucun enregistrement trouvé."
-"No positions found.","Aucune position trouvée."
-"No devices in this group.","Aucun véhicule dans ce groupe."
-"Loading...","Chargement..."
-"View on Map","Voir sur la carte"
-"View","Voir"
-"Overview","Aperçu"
-"Status","Statut"
-"Online","En ligne"
-"Offline","Hors ligne"
-"Unknown","Inconnu"
-"Total Devices","Total des véhicules"
-"Online Devices","Véhicules en ligne"
-"Offline Devices","Véhicules hors ligne"
-"Events Today","Événements aujourd'hui"
-"Trips Today","Trajets aujourd'hui"
-"Stops Today","Arrêts aujourd'hui"
-"Quick Actions","Actions rapides"
-"Last synchronization","Dernière synchronisation"
-"New Geofence","Nouveau géorepérage"
-"New Driver","Nouveau chauffeur"
-"New Order","Nouvelle commande"
-"New Device","Nouveau véhicule"
-"New Group","Nouveau groupe"
-"New User","Nouvel utilisateur"
-"Edit Device","Modifier le véhicule"
-"Edit Group","Modifier le groupe"
-"Edit User","Modifier l'utilisateur"
-"Device created.","Véhicule créé."
-"Device updated.","Véhicule mis à jour."
-"Group created.","Groupe créé."
-"Group updated.","Groupe mis à jour."
-"User created.","Utilisateur créé."
-"User updated.","Utilisateur mis à jour."
-"View Devices in Group","Voir les véhicules du groupe"
-"Password","Mot de passe"
-"New Password (leave blank to keep current)","Nouveau mot de passe (laisser vide pour conserver l'actuel)"
-"New Calendar","Nouveau calendrier"
-"New Maintenance Item","Nouvel élément de maintenance"
-"New Notification","Nouvelle notification"
-"New Saved Command","Nouvelle commande enregistrée"
-"Edit","Modifier"
-"Save","Enregistrer"
-"Create","Créer"
-"Delete","Supprimer"
-"Name","Nom"
-"Description","Description"
-"Type","Type"
-"Attributes","Attributs"
-"Unique ID","Identifiant unique"
-"Phone","Téléphone"
-"Model","Modèle"
-"Category","Catégorie"
-"Group","Groupe"
-"Last Update","Dernière mise à jour"
-"Disabled","Désactivé"
-"Administrator","Administrateur"
-"Readonly","Lecture seule"
-"Expiration","Expiration"
-"Device Limit","Limite de véhicules"
-"User Limit","Limite d'utilisateurs"
-"Latitude","Latitude"
-"Longitude","Longitude"
-"Speed","Vitesse"
-"Course","Cap"
-"Altitude","Altitude"
-"Accuracy","Précision"
-"Address","Adresse"
-"Time","Heure"
-"Date","Date"
-"From","Du"
-"To","Au"
-"Start Time","Heure de début"
-"End Time","Heure de fin"
-"Start Address","Adresse de départ"
-"End Address","Adresse d'arrivée"
-"Distance","Distance"
-"Duration","Durée"
-"Average Speed","Vitesse moyenne"
-"Maximum Speed","Vitesse maximale"
-"Fuel Spent","Carburant consommé"
-"Engine Hours","Heures moteur"
-"Command sent","Commande envoyée"
-"Command queued","Commande en file d'attente"
-"HEALTHY","EN BONNE SANTÉ"
-"UNAVAILABLE","INDISPONIBLE"
-"Not Configured","Non configuré"
-"Response time","Temps de réponse"
-"Last check","Dernière vérification"
-"Please select at least one device or group.","Veuillez sélectionner au moins un véhicule ou un groupe."
-"Both From and To dates are required.","Les dates de début et de fin sont requises."
-"Attributes must be valid JSON.","Les attributs doivent être un JSON valide."
+Dashboard,Tableau de bord
+ERP Tracking,Suivi ERP
+ERP Tracking Dashboard,Tableau de bord Suivi ERP
+Devices,Véhicules
+Device,Véhicule
+Device Details,Détails du véhicule
+Groups,Groupes
+Group,Groupe
+Drivers,Conducteurs
+Maintenance,Entretien
+Calendars,Calendriers
+Orders,Commandes
+Live Positions,Positions en temps réel
+Position History,Historique des positions
+Route,Itinéraire
+Live Camera,Caméra en direct
+Reports,Rapports
+Tracking Reports,Rapports de suivi
+Summary,Synthèse
+Trips,Trajets
+Stops,Arrêts
+Events,Événements
+Event Type,Type d'événement
+Geofence Visits,Visites de zones
+Notifications,Notifications
+Geofences,Zones géographiques
+Geofence,Zone géographique
+New Geofence,Nouvelle zone
+Edit Geofence,Modifier la zone
+Commands,Commandes
+Command Types,Types de commande
+Saved Commands,Commandes enregistrées
+New Saved Command,Nouvelle commande enregistrée
+Send Command,Envoyer la commande
+Traccar Users,Utilisateurs Traccar
+Audit Logs,Journaux d'audit
+Server Information,Informations du serveur
+Server Health,État du serveur
+Server Statistics,Statistiques du serveur
+Statistics,Statistiques
+Health,État
+Settings,Configuration
+Configuration,Configuration
+Traccar Settings,Configuration Traccar
+Test Connection,Tester la connexion
+Connection successful,Connexion réussie
+Authentication failed,Échec de l'authentification
+Connection timeout,Délai de connexion dépassé
+Invalid configuration,Configuration invalide
+Traccar server unavailable.,Serveur Traccar indisponible.
+Request timeout.,Délai de la requête dépassé.
+Traccar is not configured.,Traccar n'est pas configuré.
+The Traccar integration is disabled.,L'intégration Traccar est désactivée.
+You do not have permission to access this resource.,Vous n'avez pas la permission d'accéder à cette ressource.
+You do not have permission to access tracking data.,Vous n'avez pas la permission d'accéder aux données de suivi.
+You do not have permission to modify tracking data.,Vous n'avez pas la permission de modifier les données de suivi.
+You do not have permission to send commands to devices.,Vous n'avez pas la permission d'envoyer des commandes aux véhicules.
+Generate Report,Générer le rapport
+Generate,Générer
+Generating...,Génération en cours...
+Export,Exporter
+Export CSV,Exporter en CSV
+Export XLSX,Exporter en XLSX
+Export PDF,Exporter en PDF
+Export GPX,Exporter en GPX
+Export KML,Exporter en KML
+Send by Email,Envoyer par e-mail
+Refresh,Actualiser
+Search,Rechercher
+Previous,Précédent
+Next,Suivant
+Loading...,Chargement...
+No records found,Aucun enregistrement trouvé
+No data for this period,Aucune donnée pour cette période
+No events in this period,Aucun événement pour cette période
+No positions in this period,Aucune position pour cette période
+No positions reported,Aucune position remontée
+Adjust the filters or the search term.,Ajustez les filtres ou le terme de recherche.
+Choose your filters,Choisissez vos filtres
+Choose a device and a period,Choisissez un véhicule et une période
+Select a device,Sélectionnez un véhicule
+Select at least one device or one group.,Sélectionnez au moins un véhicule ou un groupe.
+From,Du
+To,Au
+From Date,Date de début
+To Date,Date de fin
+Status,Statut
+Online,En ligne
+Offline,Hors ligne
+Unknown,Inconnu
+All statuses,Tous les statuts
+Connected,Connecté
+Disconnected,Déconnecté
+Healthy,Opérationnel
+Unavailable,Indisponible
+Total Devices,Total des véhicules
+Online Devices,Véhicules en ligne
+Offline Devices,Véhicules hors ligne
+Events Today,Événements du jour
+Trips Today,Trajets du jour
+Stops Today,Arrêts du jour
+Quick actions,Actions rapides
+View on Map,Voir sur la carte
+Map unavailable,Carte indisponible
+Time,Heure
+Date,Date
+Latitude,Latitude
+Longitude,Longitude
+Speed,Vitesse
+Course,Cap
+Altitude (m),Altitude (m)
+Accuracy (m),Précision (m)
+Address,Adresse
+Distance (m),Distance (m)
+Duration,Durée
+Start,Début
+End,Fin
+Start Time,Heure de début
+End Time,Heure de fin
+Start Address,Adresse de départ
+End Address,Adresse d'arrivée
+Average Speed (kn),Vitesse moyenne (nd)
+Maximum Speed (kn),Vitesse maximale (nd)
+Spent Fuel (l),Carburant consommé (l)
+Engine Hours,Heures moteur
+Last Update,Dernière mise à jour
+Unique ID,Identifiant unique
+Category,Catégorie
+Model,Modèle
+Phone,Téléphone
+Disabled,Désactivé
+Administrator,Administrateur
+Readonly,Lecture seule
+Expiration,Expiration
+Device Limit,Limite de véhicules
+User Limit,Limite d'utilisateurs
+Name,Nom
+Description,Description
+Type,Type
+Area,Zone
+Calendar,Calendrier
+Schedule,Planning
+Timezone,Fuseau horaire
+Notificators,Canaux de notification
+Always,Toujours
+Parameters,Paramètres
+Parameters (JSON),Paramètres (JSON)
+Send by SMS,Envoyer par SMS
+Command sent,Commande envoyée
+Command queued,Commande mise en file d'attente
+Saved command stored,Commande enregistrée
+Geofence saved,Zone enregistrée
+Geofence deleted,Zone supprimée
+Delete,Supprimer
+Delete this geofence?,Supprimer cette zone ?
+Save,Enregistrer
+Open,Ouvrir
+Cache cleared,Cache vidé
+Clear Cache,Vider le cache
+Overview,Aperçu
+Positions,Positions
+Users,Utilisateurs
+User,Utilisateur
+Action,Action
+Object,Objet
+Details,Détails
+Requests,Requêtes
+Messages Received,Messages reçus
+Messages Stored,Messages enregistrés
+Active Users,Utilisateurs actifs
+Active Devices,Véhicules actifs
+Server activity,Activité du serveur
+Version,Version
+Last check,Dernière vérification
+Response time,Temps de réponse
+Show Events,Afficher les événements
+Show History,Afficher l'historique
+Show Log,Afficher le journal
+Check Now,Vérifier maintenant
+Start Stream,Démarrer le flux
+Live video is turned off,La vidéo en direct est désactivée
