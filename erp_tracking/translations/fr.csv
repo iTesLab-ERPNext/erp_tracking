@@ -179,3 +179,38 @@ Show Log,Afficher le journal
 Check Now,Vérifier maintenant
 Start Stream,Démarrer le flux
 Live video is turned off,La vidéo en direct est désactivée
+New Device,Nouveau véhicule
+Edit Device,Modifier le véhicule
+Delete Device,Supprimer le véhicule
+Device saved,Véhicule enregistré
+Device deleted,Véhicule supprimé
+New Group,Nouveau groupe
+Edit Group,Modifier le groupe
+Group saved,Groupe enregistré
+Group deleted,Groupe supprimé
+Parent Group ID,ID du groupe parent
+View Devices in Group,Voir les véhicules du groupe
+New Driver,Nouveau conducteur
+Edit Driver,Modifier le conducteur
+Driver saved,Conducteur enregistré
+Driver deleted,Conducteur supprimé
+New Calendar,Nouveau calendrier
+Edit Calendar,Modifier le calendrier
+Calendar saved,Calendrier enregistré
+Calendar deleted,Calendrier supprimé
+Schedule (iCalendar),Horaire (iCalendar)
+New User,Nouvel utilisateur
+Edit User,Modifier l'utilisateur
+User saved,Utilisateur enregistré
+User deleted,Utilisateur supprimé
+New Password (leave blank to keep current),Nouveau mot de passe (laisser vide pour conserver l'actuel)
+Fleet Overview,Vue d'ensemble de la flotte
+Go to Fleet Overview,Aller à la vue d'ensemble de la flotte
+Trips per Day,Trajets par jour
+Distance by Device (km),Distance par véhicule (km)
+Distance by Driver (km),Distance par conducteur (km)
+Distance by Group (km),Distance par groupe (km)
+Online Now,En ligne actuellement
+Driving Time (h),Temps de conduite (h)
+No devices or groups selected,Aucun véhicule ou groupe sélectionné
+No data for this period,Aucune donnée pour cette période

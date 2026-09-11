@@ -39,6 +39,34 @@ class DeviceDetail {
 		this.$body = this.$container.find(".erpt-tab-body");
 		this.active = "overview";
 		this.render_tabs();
+		this.setup_actions();
+	}
+
+	async setup_actions() {
+		const config = await erp_tracking.get_config();
+		this.can_manage = config.can_manage;
+		if (!this.can_manage) return;
+
+		this.page.add_menu_item(__("Edit Device"), () => {
+			if (!this.device) return;
+			erp_tracking.open_device_dialog(this.device, (updated, deleted) => {
+				if (deleted) {
+					frappe.set_route("tracking-devices");
+				} else {
+					this.load(this.device_id);
+				}
+			});
+		});
+		this.page.add_menu_item(__("Delete Device"), () => {
+			if (!this.device) return;
+			frappe.confirm(__("Delete device {0}? This cannot be undone.", [this.device.name]), async () => {
+				const response = await erp_tracking.call("erp_tracking.api.delete_device", { device_id: this.device_id });
+				if (response.success) {
+					frappe.show_alert({ message: __("Device deleted"), indicator: "green" });
+					frappe.set_route("tracking-devices");
+				}
+			});
+		});
 	}
 
 	render_tabs() {

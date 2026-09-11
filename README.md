@@ -36,14 +36,20 @@ Assign one of the three roles to each user: `ERP Tracking Manager`,
 | Area | Pages |
 | --- | --- |
 | Overview | Dashboard, Configuration |
-| Fleet | Devices, Device Details, Groups, Drivers, Maintenance |
+| Fleet | Devices (create/edit/delete for managers), Device Details, Groups (create/edit/delete), Drivers (create/edit/delete), Maintenance |
 | Tracking | Live Positions, Position History, Route, Live Camera |
-| Reports | Summary, Trips, Stops, Events, Geofence Visits |
+| Reports | **Fleet Overview** (KPIs, charts, device/driver/group breakdowns), Summary, Trips, Stops, Events, Geofence Visits |
 | Alerts | Events, Notifications |
 | Geofencing | Geofences (create / edit / delete for managers) |
 | Commands | Saved commands, command types, send command |
-| Administration | Traccar Users, Orders, Calendars, Audit Logs |
+| Administration | Traccar Users (create/edit/delete, manager only), Orders, Calendars (create/edit/delete), Audit Logs |
 | System | Server Information, Statistics, Health |
+
+Devices, Groups, Drivers and Calendars offer full CRUD to the manager role
+and read-only access to everyone else, the same split Geofences has always
+used. Traccar Users additionally require the manager role just to view the
+list (unchanged from earlier phases) - write access sits behind that same
+gate.
 
 ## Architecture
 
@@ -132,6 +138,13 @@ Endpoints present in the specification but deliberately **not** wired up:
 `/devices/{id}/image`, `/positions/{id}` (delete). They are either destructive,
 authentication-adjacent, or outside the brief. Nothing was invented.
 
+`POST`/`PUT`/`DELETE /users` **are** wired up (manager role only) - creating
+Traccar accounts from ERPNext is now supported; passwords are handled
+write-only (see `integrations/traccar/users.py`) and are never returned in
+any response. `GET /reports/combined` is wired up as
+`erp_tracking.api.get_combined_report` and also feeds the Reports > Fleet
+Overview tab, alongside the existing trips/summary/events reports.
+
 ## Live video
 
 The HLS endpoints are authenticated. Rather than give the browser a Traccar
@@ -147,13 +160,18 @@ Traccar Settings.
 bench --site <site> set-config allow_tests true
 bench --site <site> run-tests --app erp_tracking
 bench --site <site> run-tests --module erp_tracking.tests.test_security
+bench --site <site> run-tests --module erp_tracking.tests.test_crud_and_overview
 ```
 
 Covered: Basic Auth and API Key success/failure, missing credentials, timeouts,
 unreachable server, HTTP status mapping, path validation, log redaction, device
 and position reads, date and device filters, all five reports, CSV/XLSX/PDF
 exports, native-endpoint preference, role enforcement per method, allow-list
-rejection, and assertions that no response ever contains a secret.
+rejection, and assertions that no response ever contains a secret. Full
+create/edit/delete for devices, groups, users, drivers and calendars
+(including the password write-only path and the iCalendar encode/decode
+round trip) and the fleet overview's KPI/breakdown math are in
+`test_crud_and_overview.py` specifically.
 
 ## Translations
 

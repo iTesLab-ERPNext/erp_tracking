@@ -203,6 +203,67 @@ bench --site <site> run-tests --app erp_tracking
 
 ---
 
+## Phase 9 — Full CRUD (Devices, Groups, Users, Drivers, Calendars) and Fleet Overview
+
+Drivers and Geofences already had full backend CRUD from earlier phases;
+Devices and Groups had the backend but no whitelisted endpoint or UI; Users
+and Calendars had neither. This phase closes every remaining gap without
+touching the generic engines (`ListEngine`, `ReportEngine`) or any file not
+listed below.
+
+**Files modified**
+
+| File | Change |
+| --- | --- |
+| `integrations/traccar/users.py` | Added `create_user` / `update_user` / `delete_user`. Password is required on create, sent on update only when the caller actually supplied a new one, and stripped from every response via the existing `TraccarAuth.sanitize_user`. |
+| `integrations/traccar/calendars.py` | Added `create_calendar` / `update_calendar` / `delete_calendar`. `get_calendar` now also returns a decoded `ical_text` field (plain text, not the raw base64) purely so the edit dialog has something to prefill - it is re-encoded to base64 before it reaches Traccar. |
+| `integrations/traccar/reports.py` | Added `fetch_combined` / `get_combined_report` (`/reports/combined`, previously defined in `TRACCAR_ENDPOINTS` but never wired up) and `build_fleet_overview` / `get_fleet_overview`, which aggregate the *existing* trips/summary/events reports into fleet-wide KPIs and device/driver/group breakdowns. No new Traccar endpoint was introduced for the overview itself. |
+| `api.py` | Added `save_device` / `delete_device`, `get_group` / `save_group` / `delete_group`, `save_user` / `delete_user` (manager-only, same gate as `get_users`), `save_calendar` / `delete_calendar`, `get_combined_report`, `get_fleet_overview`, `export_devices_report` (wires up the previously-unused `/reports/devices/{type}` download). |
+| `page/tracking_devices/*`, `tracking_device_detail/*` | List page gained a "New Device" action; the detail page (already the "view details" surface) gained Edit/Delete menu items. Both share one dialog builder, `erp_tracking.open_device_dialog`. |
+| `page/tracking_groups/*` | Rebuilt on the exact pattern already used by Geofences: primary "New Group" action, row click opens an edit dialog with a "View Devices in Group" button and Delete. |
+| `page/tracking_drivers/*` | Same pattern; the backend and `api.py` endpoints (`save_driver`/`delete_driver`) already existed, only the UI was missing. |
+| `page/tracking_calendars/*` | Same pattern; editing fetches `get_calendar` first (for `ical_text`), then opens the dialog. |
+| `page/tracking_users/*` | Same pattern, restricted to the page's existing Manager-only role list; the password field is write-only (never pre-filled, omitted from the payload entirely when left blank on edit). |
+| `page/tracking_reports/*` | Added an `overview` sub-route (`tracking-reports/overview`) rendered by a new `FleetOverview` class in the same file - KPI cards, three `frappe.Chart` breakdowns (by device / driver / group), a trips-per-day chart, and Device/Group/From/To filters using the same `page.add_field` pattern `ReportEngine` already uses. |
+| `erp_tracking/workspace/erp_tracking/erp_tracking.json` | Added a "Fleet Overview" link at the top of the existing Reports card. |
+| `translations/fr.csv` | Added French strings for every new label. |
+| `tests/test_crud_and_overview.py` | New. Covers create/update/delete for all five resources, the password write-only behavior specifically, the iCalendar encode/decode round trip, role enforcement (existing `ROLE_USER`/`ROLE_VIEWER` fixtures from `test_security.py`), the combined-report device/group requirement, and the fleet overview's KPI/breakdown math. |
+
+**Bench**
+
+```bash
+bench --site <site> migrate
+bench build --app erp_tracking
+bench restart
+```
+
+No new DocType, Page record, or Python dependency was added, so `migrate`
+only needs to re-sync the one workspace JSON that changed.
+
+**Verify**
+
+1. Devices: **New Device** on the list page creates one; open its detail
+   page and use the menu's **Edit Device** / **Delete Device**.
+2. Groups, Drivers, Calendars: **New …** on each list page creates one;
+   click a row to edit; **Delete** in that same dialog removes it. On
+   Calendars, confirm the edit dialog shows the original schedule text (not
+   a base64 blob) and that re-saving does not corrupt it.
+3. Traccar Users (Manager only): create a user with a password, confirm
+   the list never shows it; edit the same user leaving the password field
+   blank and confirm the password still works to log into Traccar directly;
+   set a new password and confirm the old one stops working.
+4. Visit `tracking-reports/overview` (or the workspace's new **Fleet
+   Overview** link): KPI cards and three breakdown charts render for the
+   default date range; changing the Device/Group filters and clicking
+   **Generate** updates them; clearing all devices/groups and generating
+   shows the "no devices or groups selected" empty state rather than an
+   error.
+5. `bench --site <site> run-tests --module erp_tracking.tests.test_crud_and_overview`
+   passes, and the full suite (`run-tests --app erp_tracking`) still passes -
+   nothing from Phases 1-8 was changed.
+
+---
+
 ## Useful commands
 
 ```bash

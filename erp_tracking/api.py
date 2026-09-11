@@ -292,9 +292,36 @@ def update_device_accumulators(device_id, total_distance=None, hours=None):
 	return devices.update_accumulators(device_id, total_distance, hours)
 
 
+@frappe.whitelist()
+def save_device(payload, device_id=None):
+	"""Create or update a Device. The backend (``devices.py``) has carried
+	full CRUD since it was first written; this is the whitelisted entry
+	point that was missing.
+	"""
+	ensure_write()
+	payload = parse_json_arg(payload, {})
+	require(payload.get("name"), "Name")
+	require(payload.get("uniqueId"), "Unique ID")
+	if device_id:
+		return devices.update_device(device_id, payload)
+	return devices.create_device(payload)
+
+
+@frappe.whitelist()
+def delete_device(device_id):
+	ensure_write()
+	return devices.delete_device(device_id)
+
+
 # ---------------------------------------------------------------------------
 # Groups / users
 # ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def get_group(group_id):
+	ensure_read()
+	return groups.get_group(group_id)
 
 
 @frappe.whitelist()
@@ -304,9 +331,53 @@ def get_group_devices(group_id):
 
 
 @frappe.whitelist()
+def save_group(payload, group_id=None):
+	ensure_write()
+	payload = parse_json_arg(payload, {})
+	require(payload.get("name"), "Name")
+	if group_id:
+		return groups.update_group(group_id, payload)
+	return groups.create_group(payload)
+
+
+@frappe.whitelist()
+def delete_group(group_id):
+	ensure_write()
+	return groups.delete_group(group_id)
+
+
+@frappe.whitelist()
 def get_users(filters=None, refresh=False):
 	ensure_admin()
 	return users.list_users(parse_json_arg(filters, {}), parse_bool(refresh))
+
+
+@frappe.whitelist()
+def get_user(user_id):
+	ensure_admin()
+	return users.get_user(user_id)
+
+
+@frappe.whitelist()
+def save_user(payload, user_id=None):
+	"""Users are administered from inside ERPNext too, gated to managers
+	only (same role check ``get_users`` already uses). The password is
+	required on create and, on update, only sent on to Traccar when the
+	caller actually supplied a new one - see ``users.update_user``.
+	"""
+	ensure_admin()
+	payload = parse_json_arg(payload, {})
+	require(payload.get("name"), "Name")
+	require(payload.get("email"), "Email")
+	if user_id:
+		return users.update_user(user_id, payload)
+	return users.create_user(payload)
+
+
+@frappe.whitelist()
+def delete_user(user_id):
+	ensure_admin()
+	return users.delete_user(user_id)
 
 
 # ---------------------------------------------------------------------------
@@ -440,6 +511,42 @@ def mail_report(report, filters=None):
 	"""Ask Traccar to deliver the report by e-mail (``type=mail``)."""
 	ensure_read()
 	return reports.mail_report(cstr(report), parse_json_arg(filters, {}))
+
+
+@frappe.whitelist()
+def get_combined_report(filters=None):
+	"""``/reports/combined`` - route, events and positions for one request."""
+	ensure_read()
+	return reports.get_combined_report(parse_json_arg(filters, {}))
+
+
+@frappe.whitelist()
+def get_fleet_overview(from_time, to_time, device_ids=None, group_ids=None):
+	"""KPIs, per-device/driver/group breakdowns and a trips-per-day series
+	for the Reports > Overview tab - built from the existing trips/summary/
+	events reports, not a new Traccar endpoint.
+	"""
+	ensure_read()
+	return reports.get_fleet_overview(
+		from_time,
+		to_time,
+		device_ids=parse_id_list(device_ids) or None,
+		group_ids=parse_id_list(group_ids) or None,
+	)
+
+
+@frappe.whitelist()
+def export_devices_report():
+	"""``/reports/devices/{type}`` - Traccar's own fleet spreadsheet. This
+	endpoint has no JSON variant, so unlike the other reports there is
+	nothing to render in the desk table; it only ever downloads.
+	"""
+	ensure_read()
+	try:
+		content, mime = reports.fetch_devices_report()
+	except TraccarError as exc:
+		return exc.as_dict()
+	export_service.send_download(content, export_service.build_filename("devices-report", "xlsx"), mime)
 
 
 @frappe.whitelist()
@@ -658,6 +765,23 @@ def delete_maintenance(item_id):
 def get_calendar(calendar_id):
 	ensure_read()
 	return calendars.get_calendar(calendar_id)
+
+
+@frappe.whitelist()
+def save_calendar(payload, calendar_id=None):
+	ensure_write()
+	payload = parse_json_arg(payload, {})
+	require(payload.get("name"), "Name")
+	require(payload.get("ical_text"), "Schedule")
+	if calendar_id:
+		return calendars.update_calendar(calendar_id, payload)
+	return calendars.create_calendar(payload)
+
+
+@frappe.whitelist()
+def delete_calendar(calendar_id):
+	ensure_write()
+	return calendars.delete_calendar(calendar_id)
 
 
 @frappe.whitelist()
