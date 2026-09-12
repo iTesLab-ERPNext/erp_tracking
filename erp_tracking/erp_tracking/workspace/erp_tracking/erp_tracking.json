@@ -1,6 +1,6 @@
 {
  "charts": [],
- "content": "[{\"id\": \"erpt-header\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>ERP Tracking</b></span>\", \"col\": 12}}, {\"id\": \"erpt-shortcuts-label\", \"type\": \"paragraph\", \"data\": {\"text\": \"Traccar fleet tracking inside ERPNext.\", \"col\": 12}}, {\"id\": \"erpt-spacer\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"card-overview\", \"type\": \"card\", \"data\": {\"card_name\": \"Overview\", \"col\": 4}}, {\"id\": \"card-fleet\", \"type\": \"card\", \"data\": {\"card_name\": \"Fleet\", \"col\": 4}}, {\"id\": \"card-tracking\", \"type\": \"card\", \"data\": {\"card_name\": \"Tracking\", \"col\": 4}}, {\"id\": \"card-reports\", \"type\": \"card\", \"data\": {\"card_name\": \"Reports\", \"col\": 4}}, {\"id\": \"card-alerts\", \"type\": \"card\", \"data\": {\"card_name\": \"Alerts\", \"col\": 4}}, {\"id\": \"card-geofencing\", \"type\": \"card\", \"data\": {\"card_name\": \"Geofencing\", \"col\": 4}}, {\"id\": \"card-commands\", \"type\": \"card\", \"data\": {\"card_name\": \"Commands\", \"col\": 4}}, {\"id\": \"card-administration\", \"type\": \"card\", \"data\": {\"card_name\": \"Administration\", \"col\": 4}}, {\"id\": \"card-system\", \"type\": \"card\", \"data\": {\"card_name\": \"System\", \"col\": 4}}]",
+ "content": "[{\"id\": \"erpt-header\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>ERP Tracking</b></span>\", \"col\": 12}}, {\"id\": \"erpt-shortcuts-label\", \"type\": \"paragraph\", \"data\": {\"text\": \"Traccar fleet tracking inside ERPNext.\", \"col\": 12}}, {\"id\": \"erpt-spacer\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"18b0c0c8ed\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Reports\", \"col\": 3}}, {\"id\": \"card-overview\", \"type\": \"card\", \"data\": {\"card_name\": \"Overview\", \"col\": 4}}, {\"id\": \"card-fleet\", \"type\": \"card\", \"data\": {\"card_name\": \"Fleet\", \"col\": 4}}, {\"id\": \"card-tracking\", \"type\": \"card\", \"data\": {\"card_name\": \"Tracking\", \"col\": 4}}, {\"id\": \"card-reports\", \"type\": \"card\", \"data\": {\"card_name\": \"Reports\", \"col\": 4}}, {\"id\": \"card-alerts\", \"type\": \"card\", \"data\": {\"card_name\": \"Alerts\", \"col\": 4}}, {\"id\": \"card-geofencing\", \"type\": \"card\", \"data\": {\"card_name\": \"Geofencing\", \"col\": 4}}, {\"id\": \"card-commands\", \"type\": \"card\", \"data\": {\"card_name\": \"Commands\", \"col\": 4}}, {\"id\": \"card-administration\", \"type\": \"card\", \"data\": {\"card_name\": \"Administration\", \"col\": 4}}, {\"id\": \"card-system\", \"type\": \"card\", \"data\": {\"card_name\": \"System\", \"col\": 4}}]",
  "creation": "2026-01-01 00:00:00.000000",
  "docstatus": 0,
  "doctype": "Workspace",
@@ -392,6 +392,15 @@
  "quick_lists": [],
  "roles": [],
  "sequence_id": 40.0,
- "shortcuts": [],
+ "shortcuts": [
+  {
+   "color": "Blue",
+   "doc_view": "",
+   "label": "Reports",
+   "link_to": "erp-tracking-reports",
+   "stats_filter": "{}",
+   "type": "Page"
+  }
+ ],
  "title": "ERP Tracking"
 }

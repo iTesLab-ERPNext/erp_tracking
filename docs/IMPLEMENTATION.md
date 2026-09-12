@@ -280,3 +280,92 @@ tail -f sites/<site>/logs/erp_tracking.log
 # clear caches when a page does not appear
 bench --site <site> clear-cache && bench --site <site> clear-website-cache
 ```
+
+---
+
+## Phase 10 — Reports hub (dropdown-driven, mirrors the reference React project)
+
+The reference Traccar React web client's Reports section
+(`reports/components/ReportsMenu.jsx` and each `*ReportPage.jsx`) has its own
+menu of ten report types. This phase adds a single new Desk page,
+**Reports** (`/app/erp-tracking-reports`), with a plain dropdown to switch
+between them, instead of ten separate pages or tabs. No new backend
+endpoint was needed - every report already had a whitelisted method from
+earlier phases; this page only adds the UI to reach all of them from one
+place.
+
+**Files added**
+
+| File | Purpose |
+| --- | --- |
+| `erp_tracking/page/erp_tracking_reports/erp_tracking_reports.json` | New Page record, same role list as `tracking-reports` (Manager/User/Viewer/System Manager). |
+| `erp_tracking/page/erp_tracking_reports/erp_tracking_reports.js` | The `ReportsHub` class: one `<select>` for report type, and a mount point that gets rebuilt for whichever type is chosen. |
+
+**Files modified**
+
+| File | Change |
+| --- | --- |
+| `erp_tracking/workspace/erp_tracking/erp_tracking.json` | Added a "Reports" **shortcut** (a `Workspace Shortcut` row plus a matching `shortcut` content block), linking to the new page. |
+
+**How each report-type option is served**
+
+| Dropdown option | Reference page | Implementation here |
+| --- | --- | --- |
+| Combined | `CombinedReportPage.jsx` | New: calls the existing `erp_tracking.api.get_combined_report` (wired up in Phase 9 but never given a UI), flattened into a device/time/type/attributes table. Device+Group multi-select, From/To - same filters as the reference page's `deviceType="multiple"`. |
+| Events | `EventReportPage.jsx` | Existing `erp_tracking.ReportEngine` mounted here (same as `tracking-reports/events`) - same device/group/type/from/to filters, same columns, same export options. |
+| Geofence Visits | `GeofenceReportPage.jsx` | Existing `ReportEngine` (`tracking-reports/geofences`). |
+| Trips | `TripReportPage.jsx` | Existing `ReportEngine` (`tracking-reports/trips`). |
+| Stops | `StopReportPage.jsx` | Existing `ReportEngine` (`tracking-reports/stops`). |
+| Route (Positions) | `PositionsReportPage.jsx` | The reference page actually calls `GET /api/positions` (not `/api/reports/route`) for one device over a period - so this option calls `erp_tracking.api.get_position_history`, the exact same call `tracking-position-history` already makes, inlined here with its own map + table + native CSV/XLSX/GPX/KML export. |
+| Summary | `SummaryReportPage.jsx` | Existing `ReportEngine` (`tracking-reports/summary`). |
+| Chart | `ChartReportPage.jsx` | New, deliberately simplified: one device, one numeric field (Speed/Altitude/Course/Accuracy - the reference page supports every position attribute with unit conversion and multi-select; this keeps to the core fields), plotted with `frappe.Chart`, reusing the "route" report as its data source exactly like the reference page does. No export, matching the reference page (`formats={[]}`). |
+| Statistics *(managers only)* | `StatisticsPage.jsx` | Redirects to the existing `tracking-statistics` page rather than duplicating its table/chart logic. |
+| Audit *(managers only)* | `AuditPage.jsx` | Redirects to the existing `tracking-audit` page, for the same reason. |
+
+Deliberately not reproduced: **Logs** (browser-local diagnostic log, not a
+Traccar report), **Scheduled** (report-delivery scheduling via
+Notifications, a configuration screen rather than a report), and **Replay**
+(the live map/route player, not a tabular report).
+
+**A note on the requested route**
+
+The brief asked for the page to open at `/app/erp-tracking/reports`. Frappe
+Desk pages are always addressed as a single flat segment,
+`/app/<page-name>` - there is no supported way to nest a custom Page under
+another page's path the way `/app/erp-tracking/reports` implies (workspaces
+can nest, individual Pages cannot). The page is therefore named
+`erp-tracking-reports`, giving the real, working URL
+`/app/erp-tracking-reports`, reached via the new **Reports** shortcut in the
+`/app/erp-tracking` workspace exactly as requested - only the URL segment
+differs, not the navigation path to get there.
+
+**Bench**
+
+```bash
+bench --site <site> migrate
+bench build --app erp_tracking
+bench restart
+```
+
+**Verify**
+
+1. Open the `/app/erp-tracking` workspace and confirm a **Reports**
+   shortcut tile appears near the top; click it and confirm it opens
+   `/app/erp-tracking-reports`.
+2. On that page, switch the **Report Type** dropdown through Trips, Stops,
+   Summary, Events and Geofence Visits - each should look and behave
+   identically to the matching tab on the existing `tracking-reports`
+   page (same filters, same columns, same export menu).
+3. Select **Route (Positions)** - pick a device and a period, click
+   **Show**, and confirm the map and table match what
+   `tracking-position-history` already shows for the same device/period.
+4. Select **Combined** - pick at least one device, click **Generate**, and
+   confirm a table of that device's events for the period appears.
+5. Select **Chart** - pick a device, leave the field on "Speed", click
+   **Generate**, and confirm a line chart renders.
+6. As a Manager, confirm **Statistics** and **Audit** appear in the
+   dropdown and that choosing either navigates to the existing dedicated
+   page. Log in as an `ERP Tracking User` and confirm those two options
+   are absent from the dropdown (client-side) - the underlying endpoints
+   remain manager-gated server-side regardless, unchanged from earlier
+   phases.
